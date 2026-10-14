@@ -9,6 +9,7 @@ from .nrf51_sdk11_runtime import (
     Nrf51Sdk11DfuHandles,
 )
 from .qiling_rootcanal import Nrf51Sdk11BumblePeripheral
+from .session_host import LegacyDfuSessionHost, SessionHostConfig
 from .protocol import (
     CONSOLE_OUTPUT_UUID,
     CONSOLE_SERVICE_UUID,
@@ -34,11 +35,13 @@ __all__ = [
     "LegacyDfuBootloader",
     "LegacyDfuClient",
     "LegacyDfuGattBridge",
+    "LegacyDfuSessionHost",
     "Nrf51Sdk11BootloaderRuntime",
     "Nrf51Sdk11BumblePeripheral",
     "Nrf51Sdk11DfuEventResult",
     "Nrf51Sdk11DfuHandles",
     "PACKET_UUID",
     "SERVICE_UUID",
+    "SessionHostConfig",
     "STATUS_REPORT_UUID",
 ]

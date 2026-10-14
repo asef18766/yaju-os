@@ -1,0 +1,12 @@
+.git
+__pycache__/
+*.py[cod]
+.venv/
+.coverage
+build/
+dist/
+*.egg-info/
+vendor/
+artifacts/
+flag.txt
+.env

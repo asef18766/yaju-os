@@ -1,0 +1,17 @@
+services:
+  host:
+    build:
+      context: .
+    init: true
+    ports:
+      - "${HCI_PORT:-6402}:6402"
+    secrets:
+      - source: flag
+        target: flag
+    restart: unless-stopped
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=64m
+
+secrets:
+  flag:
+    file: ${FLAG_FILE:-./flag.example}

@@ -10,6 +10,7 @@ requires-python = ">=3.12"
 
 [project.scripts]
 hitcon-legacy-dfu = "hitcon_legacy_dfu.runner:main"
+hitcon-legacy-dfu-host = "hitcon_legacy_dfu.session_host:main"
 
 [project.optional-dependencies]
 emulator = [
