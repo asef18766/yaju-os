@@ -9,7 +9,7 @@ from hitcon_legacy_dfu.maintenance_runtime import MaintenanceFirmwareRuntime
 REFERENCE_ELF = MaintenanceFirmwareRuntime.repository_reference_elf()
 # Deliberately only a test fixture: players receive the binary artifact and
 # derive this normal maintenance request by reversing its Thumb handler.
-VALID_MAINTENANCE_REQUEST = bytes.fromhex("51118ecade42097126d4b05f")
+VALID_MAINTENANCE_REQUEST = bytes.fromhex("11451419198100")
 
 
 @unittest.skipUnless(

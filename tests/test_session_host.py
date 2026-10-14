@@ -19,7 +19,7 @@ from hitcon_legacy_dfu.session_host import (
 
 REFERENCE_ELF = Nrf51Sdk11BootloaderRuntime.repository_reference_elf()
 MAINTENANCE_ELF = MaintenanceFirmwareRuntime.repository_reference_elf()
-VALID_MAINTENANCE_REQUEST = bytes.fromhex("51118ecade42097126d4b05f")
+VALID_MAINTENANCE_REQUEST = bytes.fromhex("11451419198100")
 
 
 async def _wait_until(predicate, timeout: float = 15.0) -> None:

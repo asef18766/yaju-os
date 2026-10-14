@@ -33,7 +33,7 @@ from hitcon_legacy_dfu.protocol import (
 
 
 MAINTENANCE_REFERENCE_ELF = MaintenanceFirmwareRuntime.repository_reference_elf()
-VALID_MAINTENANCE_REQUEST = bytes.fromhex("51118ecade42097126d4b05f")
+VALID_MAINTENANCE_REQUEST = bytes.fromhex("11451419198100")
 
 
 class RecordingRuntime:
