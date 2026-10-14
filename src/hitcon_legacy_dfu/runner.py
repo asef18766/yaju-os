@@ -12,6 +12,7 @@ from typing import Sequence
 from .bootloader import BootloaderConfig, LegacyDfuBootloader
 from .bridge import LegacyDfuGattBridge
 from .bumble_adapter import LegacyDfuBumblePeripheral
+from .maintenance_runtime import MaintenanceFirmwareRuntime
 from .qiling_runtime import QilingRuntime
 
 
@@ -30,7 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="tcp-client:127.0.0.1:6402",
         help="Bumble transport spec for the target controller (default: %(default)s)",
     )
-    parser.add_argument("--name", default="HITCON Legacy DFU", help="advertised BLE name")
+    parser.add_argument("--name", default="HITCON Field Node", help="advertised BLE name")
     parser.add_argument(
         "--address",
         default="F6:F7:F8:F9:FA:FB",
@@ -51,6 +52,14 @@ def build_parser() -> argparse.ArgumentParser:
             "rather than the Python challenge model"
         ),
     )
+    parser.add_argument(
+        "--maintenance-firmware-elf",
+        type=Path,
+        help=(
+            "normal application ELF that must authorize the reset into legacy DFU; "
+            "requires --reference-bootloader-elf"
+        ),
+    )
     return parser
 
 
@@ -69,17 +78,17 @@ async def serve(args: argparse.Namespace) -> None:
         sram_size=config.sram_size,
         instruction_budget=args.instruction_budget,
     )
+    if args.maintenance_firmware_elf is not None and args.reference_bootloader_elf is None:
+        raise ValueError("--maintenance-firmware-elf requires --reference-bootloader-elf")
+
     reference_runtime = None
+    maintenance_runtime = None
     if args.reference_bootloader_elf is not None:
         from .nrf51_sdk11_runtime import Nrf51Sdk11BootloaderRuntime
 
         reference_runtime = Nrf51Sdk11BootloaderRuntime(args.reference_bootloader_elf)
-        boot_result = reference_runtime.boot()
-        print(
-            "official nRF51 SDK 11 bootloader reached DFU advertising "
-            f"({boot_result.elf_sha256[:12]})",
-            flush=True,
-        )
+        if args.maintenance_firmware_elf is not None:
+            maintenance_runtime = MaintenanceFirmwareRuntime(args.maintenance_firmware_elf)
 
     if reference_runtime is None:
         bootloader = LegacyDfuBootloader(
@@ -92,15 +101,27 @@ async def serve(args: argparse.Namespace) -> None:
             address=args.address,
         )
     else:
-        from .qiling_rootcanal import Nrf51Sdk11BumblePeripheral
+        if maintenance_runtime is None:
+            from .qiling_rootcanal import Nrf51Sdk11BumblePeripheral
 
-        peripheral = Nrf51Sdk11BumblePeripheral(
-            reference_runtime,
-            runtime,
-            application_base=config.application_base,
-            name=args.name,
-            address=args.address,
-        )
+            peripheral = Nrf51Sdk11BumblePeripheral(
+                reference_runtime,
+                runtime,
+                application_base=config.application_base,
+                name=args.name,
+                address=args.address,
+            )
+        else:
+            from .qiling_rootcanal import LayeredNrf51BumblePeripheral
+
+            peripheral = LayeredNrf51BumblePeripheral(
+                maintenance_runtime,
+                reference_runtime,
+                runtime,
+                application_base=config.application_base,
+                name=args.name,
+                address=args.address,
+            )
     stopped = asyncio.Event()
     loop = asyncio.get_running_loop()
     for signum in (signal.SIGINT, signal.SIGTERM):
@@ -109,10 +130,16 @@ async def serve(args: argparse.Namespace) -> None:
 
     try:
         await peripheral.start(args.hci_transport)
-        print(f"legacy DFU target is advertising through {args.hci_transport}", flush=True)
+        phase = getattr(peripheral, "phase", "dfu")
+        print(
+            f"challenge target is advertising through {args.hci_transport} (phase={phase})",
+            flush=True,
+        )
         await stopped.wait()
     finally:
         await peripheral.stop()
+        if maintenance_runtime is not None:
+            maintenance_runtime.close()
         if reference_runtime is not None:
             reference_runtime.close()
 

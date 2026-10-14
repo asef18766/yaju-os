@@ -22,6 +22,13 @@ REVISION_UUID = LEGACY_DFU_BASE_UUID.replace("xxxx", "1534")
 CONSOLE_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
 CONSOLE_OUTPUT_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
 
+# The board starts in this ordinary vendor maintenance service.  It is not a
+# Nordic DFU UUID and does not advertise the legacy-DFU service until the
+# compiled application accepts its boot-mode request.
+MAINTENANCE_SERVICE_UUID = "5a1c0001-7c5d-4c8d-942c-a786c1d58b6d"
+MAINTENANCE_CONTROL_UUID = "5a1c0002-7c5d-4c8d-942c-a786c1d58b6d"
+MAINTENANCE_INFO_UUID = "5a1c0003-7c5d-4c8d-942c-a786c1d58b6d"
+
 
 class DfuOpcode(IntEnum):
     """Legacy BLE DFU control-point operations."""

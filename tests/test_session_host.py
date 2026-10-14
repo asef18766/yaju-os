@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 
 from hitcon_legacy_dfu.nrf51_sdk11_runtime import Nrf51Sdk11BootloaderRuntime
+from hitcon_legacy_dfu.maintenance_runtime import MaintenanceFirmwareRuntime
 from hitcon_legacy_dfu.session_host import (
     LegacyDfuSessionHost,
     SessionHostConfig,
@@ -17,6 +18,8 @@ from hitcon_legacy_dfu.session_host import (
 
 
 REFERENCE_ELF = Nrf51Sdk11BootloaderRuntime.repository_reference_elf()
+MAINTENANCE_ELF = MaintenanceFirmwareRuntime.repository_reference_elf()
+VALID_MAINTENANCE_REQUEST = bytes.fromhex("51118ecade42097126d4b05f")
 
 
 async def _wait_until(predicate, timeout: float = 15.0) -> None:
@@ -32,8 +35,9 @@ async def _wait_until(predicate, timeout: float = 15.0) -> None:
     importlib.util.find_spec("qiling") is not None
     and importlib.util.find_spec("bumble") is not None
     and importlib.util.find_spec("rootcanal") is not None
-    and REFERENCE_ELF.is_file(),
-    "Qiling, Rootcanal, or the built nRF51 SDK 11 reference ELF is unavailable",
+    and REFERENCE_ELF.is_file()
+    and MAINTENANCE_ELF.is_file(),
+    "Qiling, Rootcanal, or a built nRF51 challenge firmware artifact is unavailable",
 )
 class SessionHostIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
@@ -54,6 +58,7 @@ class SessionHostIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     rootcanal_binary=_default_rootcanal_binary(),
                     max_sessions=2,
                     startup_timeout=15.0,
+                    maintenance_firmware_elf=MAINTENANCE_ELF,
                 )
             )
             await host.start()
@@ -105,12 +110,14 @@ class SessionHostIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     rootcanal_binary=_default_rootcanal_binary(),
                     max_sessions=1,
                     startup_timeout=15.0,
+                    maintenance_firmware_elf=MAINTENANCE_ELF,
                 )
             )
             await host.start()
             transport = None
             client = None
-            connection = None
+            initial_connection = None
+            dfu_connection = None
             try:
                 transport = await open_transport(f"tcp-client:127.0.0.1:{host.listen_port}")
                 client = Device.with_hci(
@@ -120,17 +127,60 @@ class SessionHostIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     transport.sink,
                 )
                 await client.power_on()
-                connection = await client.connect(
+                initial_connection = await client.connect(
                     Address("F6:F7:F8:F9:FA:FB"),
                     timeout=15,
                 )
-                peer = Peer(connection)
-                services = await peer.discover_service(UUID(SERVICE_UUID))
+                disconnected = asyncio.Event()
+                initial_connection.on(
+                    initial_connection.EVENT_DISCONNECTION,
+                    lambda *_args: disconnected.set(),
+                )
+                peer = Peer(initial_connection)
+                from hitcon_legacy_dfu.protocol import (
+                    MAINTENANCE_CONTROL_UUID,
+                    MAINTENANCE_SERVICE_UUID,
+                )
+
+                self.assertEqual(
+                    len(await peer.discover_service(UUID(SERVICE_UUID))),
+                    0,
+                )
+                maintenance_services = await peer.discover_service(UUID(MAINTENANCE_SERVICE_UUID))
+                self.assertEqual(len(maintenance_services), 1)
+                maintenance_service = maintenance_services[0]
+                await peer.discover_characteristics(service=maintenance_service)
+                control = peer.get_characteristics_by_uuid(
+                    UUID(MAINTENANCE_CONTROL_UUID), maintenance_service
+                )[0]
+                await peer.write_value(control, VALID_MAINTENANCE_REQUEST, with_response=True)
+                await asyncio.wait_for(disconnected.wait(), timeout=10)
+
+                deadline = time.monotonic() + 15.0
+                last_error: Exception | None = None
+                while time.monotonic() < deadline:
+                    try:
+                        dfu_connection = await client.connect(
+                            Address("F6:F7:F8:F9:FA:FB"), timeout=0.5
+                        )
+                        break
+                    except Exception as exc:
+                        last_error = exc
+                        await asyncio.sleep(0.05)
+                if dfu_connection is None:
+                    if last_error is not None:
+                        raise last_error
+                    raise TimeoutError("legacy DFU target did not advertise after maintenance reset")
+                dfu_peer = Peer(dfu_connection)
+                services = await dfu_peer.discover_service(UUID(SERVICE_UUID))
                 self.assertEqual(len(services), 1)
             finally:
-                if connection is not None:
+                if dfu_connection is not None:
                     with suppress(Exception):
-                        await connection.disconnect()
+                        await dfu_connection.disconnect()
+                if initial_connection is not None:
+                    with suppress(Exception):
+                        await initial_connection.disconnect()
                 if client is not None:
                     with suppress(Exception):
                         await client.power_off()

@@ -8,12 +8,16 @@ from .nrf51_sdk11_runtime import (
     Nrf51Sdk11DfuEventResult,
     Nrf51Sdk11DfuHandles,
 )
-from .qiling_rootcanal import Nrf51Sdk11BumblePeripheral
+from .maintenance_runtime import MaintenanceFirmwareRuntime
+from .qiling_rootcanal import LayeredNrf51BumblePeripheral, Nrf51Sdk11BumblePeripheral
 from .session_host import LegacyDfuSessionHost, SessionHostConfig
 from .protocol import (
     CONSOLE_OUTPUT_UUID,
     CONSOLE_SERVICE_UUID,
     CONTROL_POINT_UUID,
+    MAINTENANCE_CONTROL_UUID,
+    MAINTENANCE_INFO_UUID,
+    MAINTENANCE_SERVICE_UUID,
     PACKET_UUID,
     SERVICE_UUID,
     STATUS_REPORT_UUID,
@@ -36,6 +40,11 @@ __all__ = [
     "LegacyDfuClient",
     "LegacyDfuGattBridge",
     "LegacyDfuSessionHost",
+    "LayeredNrf51BumblePeripheral",
+    "MaintenanceFirmwareRuntime",
+    "MAINTENANCE_CONTROL_UUID",
+    "MAINTENANCE_INFO_UUID",
+    "MAINTENANCE_SERVICE_UUID",
     "Nrf51Sdk11BootloaderRuntime",
     "Nrf51Sdk11BumblePeripheral",
     "Nrf51Sdk11DfuEventResult",

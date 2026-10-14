@@ -21,11 +21,15 @@ import struct
 from typing import TYPE_CHECKING, Protocol
 
 from .bumble_adapter import BumbleUnavailable
+from .maintenance_runtime import MaintenanceFirmwareRuntime
 from .nrf51_sdk11_runtime import Nrf51Sdk11BootloaderRuntime, Nrf51Sdk11RuntimeError
 from .protocol import (
     CONSOLE_OUTPUT_UUID,
     CONSOLE_SERVICE_UUID,
     CONTROL_POINT_UUID,
+    MAINTENANCE_CONTROL_UUID,
+    MAINTENANCE_INFO_UUID,
+    MAINTENANCE_SERVICE_UUID,
     PACKET_UUID,
     REVISION_UUID,
     SERVICE_UUID,
@@ -423,3 +427,363 @@ class Nrf51Sdk11BumblePeripheral:
         finally:
             if self._application_reset_task is asyncio.current_task():
                 self._application_reset_task = None
+
+
+class MaintenanceApplicationBumblePeripheral:
+    """Initial non-DFU board service backed by a compiled Thumb application.
+
+    This service intentionally has no Nordic DFU UUID.  Its only writable
+    characteristic asks the normal application to enter maintenance boot
+    mode.  The authorization routine itself is executed in Qiling by
+    :class:`MaintenanceFirmwareRuntime`; this class only owns HCI/GATT and the
+    physical disconnect that a reset would cause.
+    """
+
+    def __init__(
+        self,
+        runtime: MaintenanceFirmwareRuntime,
+        *,
+        name: str = "HITCON Field Node",
+        address: str = "F6:F7:F8:F9:FA:FB",
+    ) -> None:
+        encoded_name = name.encode("utf-8")
+        if not encoded_name or len(encoded_name) > 29:
+            raise ValueError("BLE local name must be between 1 and 29 UTF-8 bytes")
+        self.runtime = runtime
+        self.name = name
+        self.address = address
+        self.device: Device | None = None
+        self._transport: Transport | None = None
+        self._connection: Connection | None = None
+        self._control: Characteristic[bytes] | None = None
+        self._write_lock: asyncio.Lock | None = None
+        self._bootloader_requested: asyncio.Event | None = None
+        self._handoff_ready: asyncio.Event | None = None
+        self._disconnect_task: asyncio.Task[None] | None = None
+        self._att_unlikely_error: int | None = None
+
+    @property
+    def connected(self) -> bool:
+        return self._connection is not None
+
+    async def start(self, hci_transport: str) -> None:
+        """Attach the ordinary application service to its HCI controller."""
+
+        if self.device is not None:
+            raise RuntimeError("peripheral is already running")
+        try:
+            from bumble import att
+            from bumble.core import AdvertisingData, UUID
+            from bumble.device import Device
+            from bumble.gatt import Characteristic, CharacteristicValue, Service
+            from bumble.hci import Address
+            from bumble.transport import open_transport
+        except ModuleNotFoundError as exc:
+            raise BumbleUnavailable(
+                "Bumble is optional; install the project with the 'transport' extra"
+            ) from exc
+
+        # Fail before exposing a radio if the intended player handout cannot
+        # be loaded or has lost the firmware entry point.
+        await asyncio.to_thread(self.runtime.boot)
+        self._att_unlikely_error = att.ATT_UNLIKELY_ERROR_ERROR
+        self._write_lock = asyncio.Lock()
+        self._bootloader_requested = asyncio.Event()
+        self._handoff_ready = asyncio.Event()
+        transport = await open_transport(hci_transport)
+        try:
+            device = Device.with_hci(
+                self.name,
+                Address(self.address),
+                transport.source,
+                transport.sink,
+            )
+            control = Characteristic(
+                MAINTENANCE_CONTROL_UUID,
+                Characteristic.Properties.WRITE,
+                Characteristic.WRITEABLE,
+                CharacteristicValue(write=self._on_control_write),
+            )
+            info = Characteristic(
+                MAINTENANCE_INFO_UUID,
+                Characteristic.Properties.READ,
+                Characteristic.READABLE,
+                b"FN2\x01",
+            )
+            device.add_service(Service(MAINTENANCE_SERVICE_UUID, [control, info]))
+            device.on(device.EVENT_CONNECTION, self._on_connection)
+            advertising_data = bytes(
+                AdvertisingData(
+                    [
+                        (AdvertisingData.FLAGS, bytes((0x06,))),
+                        (
+                            AdvertisingData.COMPLETE_LIST_OF_128_BIT_SERVICE_CLASS_UUIDS,
+                            UUID(MAINTENANCE_SERVICE_UUID).to_bytes(force_128=True),
+                        ),
+                    ]
+                )
+            )
+            scan_response_data = bytes(
+                AdvertisingData(
+                    [(AdvertisingData.COMPLETE_LOCAL_NAME, self.name.encode("utf-8"))]
+                )
+            )
+            self.device = device
+            self._transport = transport
+            self._control = control
+            await device.power_on()
+            await device.start_advertising(
+                auto_restart=False,
+                advertising_data=advertising_data,
+                scan_response_data=scan_response_data,
+            )
+        except BaseException:
+            await transport.close()
+            self._clear_runtime_state()
+            raise
+
+    async def stop(self) -> None:
+        """Stop the normal application target before its bootloader replaces it."""
+
+        disconnect_task = self._disconnect_task
+        if disconnect_task is not None and disconnect_task is not asyncio.current_task():
+            disconnect_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await disconnect_task
+        device = self.device
+        transport = self._transport
+        self._clear_runtime_state()
+        if device is not None:
+            with suppress(Exception):
+                await device.stop_advertising()
+            with suppress(Exception):
+                await device.power_off()
+        if transport is not None:
+            await transport.close()
+
+    async def wait_for_bootloader_request(self, timeout: float | None = None) -> None:
+        event = self._bootloader_requested
+        if event is None:
+            raise RuntimeError("peripheral is not running")
+        if timeout is None:
+            await event.wait()
+        else:
+            await asyncio.wait_for(event.wait(), timeout)
+
+    async def wait_for_handoff(self, timeout: float | None = None) -> None:
+        """Wait until the accepted write has had a chance to return over ATT."""
+
+        event = self._handoff_ready
+        if event is None:
+            raise RuntimeError("peripheral is not running")
+        if timeout is None:
+            await event.wait()
+        else:
+            await asyncio.wait_for(event.wait(), timeout)
+
+    def _clear_runtime_state(self) -> None:
+        self._connection = None
+        self._control = None
+        self._write_lock = None
+        self._bootloader_requested = None
+        self._handoff_ready = None
+        self._disconnect_task = None
+        self._att_unlikely_error = None
+        self.device = None
+        self._transport = None
+
+    def _on_connection(self, connection: Connection) -> None:
+        if self._connection is not None and self._connection is not connection:
+            asyncio.create_task(connection.disconnect())
+            return
+        if self._connection is connection:
+            return
+        self._connection = connection
+        connection.on(
+            connection.EVENT_DISCONNECTION,
+            lambda *_args: self._on_disconnection(connection),
+        )
+
+    def _on_disconnection(self, connection: Connection) -> None:
+        if self._connection is connection:
+            self._connection = None
+
+    async def _on_control_write(self, connection: Connection, payload: bytes) -> None:
+        lock = self._write_lock
+        if lock is None:
+            raise RuntimeError("peripheral is not running")
+        async with lock:
+            if self._connection is None:
+                self._on_connection(connection)
+            if self._connection is not connection:
+                self._raise_att_error()
+
+            accepted = await asyncio.to_thread(self.runtime.request_bootloader, bytes(payload))
+            if not accepted:
+                self._raise_att_error()
+            event = self._bootloader_requested
+            if event is None:
+                raise RuntimeError("peripheral is not running")
+            event.set()
+            if self._disconnect_task is None:
+                self._disconnect_task = asyncio.create_task(
+                    self._disconnect_after_boot_request(connection)
+                )
+
+    def _raise_att_error(self) -> None:
+        from bumble.att import ATT_Error
+
+        assert self._att_unlikely_error is not None
+        raise ATT_Error(error_code=self._att_unlikely_error)
+
+    async def _disconnect_after_boot_request(self, connection: Connection) -> None:
+        # Returning to the event loop first lets Bumble emit the successful
+        # ATT Write Response before the reset's physical disconnect.
+        await asyncio.sleep(0)
+        try:
+            if self._connection is connection:
+                with suppress(Exception):
+                    await connection.disconnect()
+        finally:
+            handoff = self._handoff_ready
+            if handoff is not None:
+                handoff.set()
+            if self._disconnect_task is asyncio.current_task():
+                self._disconnect_task = None
+
+
+class LayeredNrf51BumblePeripheral:
+    """Expose an ordinary application first, then the real legacy DFU target.
+
+    A successful app-controlled GPREGRET request tears down its target-side
+    HCI controller and starts a fresh controller with the same BLE address.
+    This gives a player the normal disconnect/reconnect boundary of a board
+    reset and prevents discovery of Nordic's ``1530`` service beforehand.
+    """
+
+    def __init__(
+        self,
+        maintenance_runtime: MaintenanceFirmwareRuntime,
+        bootloader_runtime: Nrf51Sdk11BootloaderRuntime,
+        application_runtime: ApplicationRuntime,
+        *,
+        application_base: int = 0x1B000,
+        name: str = "HITCON Field Node",
+        address: str = "F6:F7:F8:F9:FA:FB",
+        revision: int = 8,
+    ) -> None:
+        self.maintenance_runtime = maintenance_runtime
+        self.bootloader_runtime = bootloader_runtime
+        self.application_runtime = application_runtime
+        self.application_base = application_base
+        self.name = name
+        self.address = address
+        self.revision = revision
+        self._maintenance = MaintenanceApplicationBumblePeripheral(
+            maintenance_runtime,
+            name=name,
+            address=address,
+        )
+        self._dfu: Nrf51Sdk11BumblePeripheral | None = None
+        self._hci_transport: str | None = None
+        self._handoff_task: asyncio.Task[None] | None = None
+        self._dfu_advertising_ready: asyncio.Event | None = None
+        self._stopping = False
+        self._phase = "maintenance"
+        self._handoff_error: Exception | None = None
+
+    @property
+    def device(self) -> Device | None:
+        if self._dfu is not None:
+            return self._dfu.device
+        return self._maintenance.device
+
+    @property
+    def phase(self) -> str:
+        return self._phase
+
+    @property
+    def handoff_error(self) -> Exception | None:
+        return self._handoff_error
+
+    async def start(self, hci_transport: str) -> None:
+        if self._hci_transport is not None:
+            raise RuntimeError("peripheral is already running")
+        self._stopping = False
+        self._phase = "maintenance"
+        self._handoff_error = None
+        self._dfu_advertising_ready = asyncio.Event()
+        self._hci_transport = hci_transport
+        try:
+            await self._maintenance.start(hci_transport)
+            self._handoff_task = asyncio.create_task(self._handoff_to_legacy_dfu())
+        except BaseException:
+            self._hci_transport = None
+            self._dfu_advertising_ready = None
+            raise
+
+    async def stop(self) -> None:
+        self._stopping = True
+        handoff_task = self._handoff_task
+        if handoff_task is not None and handoff_task is not asyncio.current_task():
+            handoff_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await handoff_task
+        self._handoff_task = None
+        if self._dfu is not None:
+            await self._dfu.stop()
+            self._dfu = None
+        await self._maintenance.stop()
+        self._hci_transport = None
+        self._dfu_advertising_ready = None
+
+    async def wait_for_dfu_advertising(self, timeout: float | None = None) -> None:
+        """Wait for the post-reset legacy DFU service to be advertised."""
+
+        event = self._dfu_advertising_ready
+        if event is None:
+            raise RuntimeError("peripheral is not running")
+        if timeout is None:
+            await event.wait()
+        else:
+            await asyncio.wait_for(event.wait(), timeout)
+        if self._handoff_error is not None:
+            raise RuntimeError("maintenance-to-DFU handoff failed") from self._handoff_error
+
+    async def _handoff_to_legacy_dfu(self) -> None:
+        try:
+            await self._maintenance.wait_for_bootloader_request()
+            await self._maintenance.wait_for_handoff()
+            if self._stopping:
+                return
+            await self._maintenance.stop()
+            if self._stopping:
+                return
+            hci_transport = self._hci_transport
+            if hci_transport is None:
+                return
+            dfu = Nrf51Sdk11BumblePeripheral(
+                self.bootloader_runtime,
+                self.application_runtime,
+                application_base=self.application_base,
+                name=self.name,
+                address=self.address,
+                revision=self.revision,
+            )
+            self._dfu = dfu
+            await dfu.start(hci_transport)
+            self._phase = "dfu"
+            ready = self._dfu_advertising_ready
+            if ready is not None:
+                ready.set()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self._handoff_error = exc
+            self._phase = "handoff-failed"
+            ready = self._dfu_advertising_ready
+            if ready is not None:
+                ready.set()
+        finally:
+            if self._handoff_task is asyncio.current_task():
+                self._handoff_task = None

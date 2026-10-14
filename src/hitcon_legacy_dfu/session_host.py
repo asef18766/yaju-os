@@ -22,6 +22,7 @@ import socket
 import sys
 from typing import Sequence
 
+from .maintenance_runtime import MaintenanceFirmwareRuntime
 from .nrf51_sdk11_runtime import Nrf51Sdk11BootloaderRuntime
 
 
@@ -47,6 +48,7 @@ class SessionHostConfig:
     startup_timeout: float = 30.0
     shutdown_timeout: float = 5.0
     instruction_budget: int = 5_000
+    maintenance_firmware_elf: Path | None = None
 
     def validate(self) -> None:
         if not 0 <= self.listen_port <= 0xFFFF:
@@ -65,6 +67,11 @@ class SessionHostConfig:
             raise ValueError(
                 "reference_bootloader_elf does not exist: "
                 f"{self.reference_bootloader_elf}"
+            )
+        if self.maintenance_firmware_elf is not None and not self.maintenance_firmware_elf.is_file():
+            raise ValueError(
+                "maintenance_firmware_elf does not exist: "
+                f"{self.maintenance_firmware_elf}"
             )
         if not self.rootcanal_binary.is_file():
             raise ValueError(f"rootcanal_binary does not exist: {self.rootcanal_binary}")
@@ -254,7 +261,7 @@ class LegacyDfuSessionHost:
             # detection, avoiding a disposable HCI probe connection.
             session.backend_reader, session.backend_writer = await self._connect_rootcanal(session)
 
-            session.target = await asyncio.create_subprocess_exec(
+            target_arguments = [
                 sys.executable,
                 "-m",
                 "hitcon_legacy_dfu.runner",
@@ -266,6 +273,13 @@ class LegacyDfuSessionHost:
                 str(self.config.instruction_budget),
                 "--reference-bootloader-elf",
                 str(self.config.reference_bootloader_elf),
+            ]
+            if self.config.maintenance_firmware_elf is not None:
+                target_arguments.extend(
+                    ("--maintenance-firmware-elf", str(self.config.maintenance_firmware_elf))
+                )
+            session.target = await asyncio.create_subprocess_exec(
+                *target_arguments,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
                 env={**os.environ, "PYTHONUNBUFFERED": "1"},
@@ -317,7 +331,7 @@ class LegacyDfuSessionHost:
                 raise SessionHostError(
                     f"Qiling target exited during startup with status {session.target.returncode}"
                 )
-            raise SessionHostError("Qiling target did not reach DFU advertising before timeout")
+            raise SessionHostError("Qiling target did not begin advertising before timeout")
         finally:
             for task in (ready_wait, exit_wait):
                 if not task.done():
@@ -336,7 +350,7 @@ class LegacyDfuSessionHost:
             while line := await stream.readline():
                 message = line.decode("utf-8", errors="replace").rstrip()
                 LOGGER.info("session %d %s: %s", session.identifier, label, message)
-                if label == "target" and "legacy DFU target is advertising through" in message:
+                if label == "target" and "challenge target is advertising through" in message:
                     session.target_ready.set()
         except asyncio.CancelledError:
             raise
@@ -445,6 +459,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Nrf51Sdk11BootloaderRuntime.repository_reference_elf(),
     )
+    parser.add_argument(
+        "--maintenance-firmware-elf",
+        type=Path,
+        default=MaintenanceFirmwareRuntime.repository_reference_elf(),
+        help="normal application ELF that gates entry into legacy DFU",
+    )
     parser.add_argument("--rootcanal-binary", type=Path)
     parser.add_argument("--max-sessions", type=int, default=8)
     parser.add_argument("--startup-timeout", type=float, default=30.0)
@@ -464,6 +484,7 @@ async def serve(args: argparse.Namespace) -> None:
         listen_port=args.listen_port,
         secret_file=args.secret_file.resolve(),
         reference_bootloader_elf=args.reference_bootloader_elf.resolve(),
+        maintenance_firmware_elf=args.maintenance_firmware_elf.resolve(),
         rootcanal_binary=rootcanal_binary,
         max_sessions=args.max_sessions,
         startup_timeout=args.startup_timeout,
