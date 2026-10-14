@@ -1,0 +1,73 @@
+from __future__ import annotations
+
+import importlib.util
+import unittest
+
+from hitcon_legacy_dfu.bootloader import BootloaderConfig, LegacyDfuBootloader
+from hitcon_legacy_dfu.bridge import LegacyDfuGattBridge
+from hitcon_legacy_dfu.client import LegacyDfuClient
+from hitcon_legacy_dfu.payloads import make_gpio_dump_payload, make_gpio_probe_payload
+
+
+@unittest.skipUnless(importlib.util.find_spec("qiling") is not None, "optional Qiling dependency is not installed")
+class QilingRuntimeTests(unittest.TestCase):
+    def test_uploaded_thumb_payload_reads_gpio_and_writes_uart(self) -> None:
+        from hitcon_legacy_dfu.qiling_runtime import QilingRuntime
+
+        secret = b"CTF{legacy_dfu_gpio}"
+        runtime = QilingRuntime(secret, instruction_budget=5)
+        bootloader = LegacyDfuBootloader(runtime=runtime)
+        client = LegacyDfuClient(LegacyDfuGattBridge(bootloader))
+
+        client.upload(make_gpio_probe_payload())
+
+        self.assertIsNotNone(runtime.last_result)
+        assert runtime.last_result is not None
+        self.assertEqual(runtime.last_result.uart_output, secret[:4])
+        self.assertEqual(runtime.last_result.gpio_reads, 1)
+        self.assertIsNone(runtime.last_result.fault)
+
+    def test_uploaded_thumb_payload_can_dump_multiple_gpio_words(self) -> None:
+        from hitcon_legacy_dfu.qiling_runtime import QilingRuntime
+
+        secret = b"CTF{gpio_dump_read_32_bytes!!!!}"
+        runtime = QilingRuntime(secret, instruction_budget=32)
+        bootloader = LegacyDfuBootloader(runtime=runtime)
+        client = LegacyDfuClient(LegacyDfuGattBridge(bootloader))
+
+        client.upload(make_gpio_dump_payload(len(secret)))
+
+        self.assertIsNotNone(runtime.last_result)
+        assert runtime.last_result is not None
+        self.assertEqual(runtime.last_result.uart_output, secret)
+        self.assertEqual(runtime.last_result.gpio_reads, len(secret) // 4)
+        self.assertIsNone(runtime.last_result.fault)
+
+    def test_nrf51_sdk11_profile_runs_a_word_aligned_uploaded_payload(self) -> None:
+        from hitcon_legacy_dfu.qiling_runtime import QilingRuntime
+
+        config = BootloaderConfig.nrf51_sdk11_pca10028_s130()
+        secret = b"0123456789abcdef0123456789abcdef"
+        runtime = QilingRuntime(
+            secret,
+            flash_size=config.flash_size,
+            sram_base=config.sram_base,
+            sram_size=config.sram_size,
+            instruction_budget=32,
+        )
+        bootloader = LegacyDfuBootloader(config=config, runtime=runtime)
+        client = LegacyDfuClient(LegacyDfuGattBridge(bootloader))
+        image = make_gpio_dump_payload(len(secret), application_base=config.application_base)
+
+        client.upload(image)
+
+        self.assertEqual(bootloader.active_image, image)
+        self.assertIsNotNone(runtime.last_result)
+        assert runtime.last_result is not None
+        self.assertEqual(runtime.last_result.uart_output, secret)
+        self.assertEqual(runtime.last_result.gpio_reads, len(secret) // 4)
+        self.assertIsNone(runtime.last_result.fault)
+
+
+if __name__ == "__main__":
+    unittest.main()

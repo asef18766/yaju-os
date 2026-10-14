@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hitcon-legacy-dfu"
+version = "0.1.0"
+description = "A testable Nordic legacy BLE DFU CTF target"
+requires-python = ">=3.12"
+
+[project.scripts]
+hitcon-legacy-dfu = "hitcon_legacy_dfu.runner:main"
+
+[project.optional-dependencies]
+emulator = [
+  "qiling @ git+https://github.com/qilingframework/qiling.git@86c927cb329993b14e2586e04d1dd7a90deee5fb",
+  "unicorn==2.1.3",
+]
+transport = [
+  "bumble==0.0.235",
+  "rootcanal==1.13.0",
+]
+full = [
+  "qiling @ git+https://github.com/qilingframework/qiling.git@86c927cb329993b14e2586e04d1dd7a90deee5fb",
+  "unicorn==2.1.3",
+  "bumble==0.0.235",
+  "rootcanal==1.13.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
