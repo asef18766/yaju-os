@@ -155,3 +155,28 @@ PYTHONPATH=src python3 -m unittest discover -s tests -v
 MTU 23 的完整循環、不同 MTU／分段邊界、offset 重試、唯讀限制與重連歸零，逐 byte 比對
 firmware 的 S130 registration／read-authorize event 和離線 preview，並驗證 DFU 階段不再有動畫
 service。
+
+## CI 與發布包
+
+GitHub Actions 會使用專案的 Dockerfile 建置正式映像、執行完整測試，接著產生一個 workflow
+artifact，其中固定包含：
+
+- `hitcon-legacy-dfu-attachment.zip`：給參賽者的
+  `maintenance_application.bin`、簡短說明、build metadata 與 SHA-256 manifest；不含 firmware
+  source。
+- `hitcon-legacy-dfu-service.zip`：可直接部署的 Docker Compose build context、部署說明與
+  SHA-256 manifest；只含 `flag.example`，不含真實 flag、SDK、cache、artifacts 或 tests。
+- `SHA256SUMS`：上述兩個 ZIP 自身的 checksum。
+
+CI 會再解開 service ZIP、執行 `docker compose config` 並從解開後的內容重新 build image，避免
+部署包漏檔。每次 push、pull request 與手動 dispatch 都會執行；成功後可在該 workflow run 的
+Artifacts 區下載。
+
+本機已建好 firmware 時，也可以產生相同格式：
+
+```bash
+SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)" \
+python3 scripts/package_release.py \
+  --handout artifacts/maintenance_application/maintenance_application.bin \
+  --revision "$(git rev-parse HEAD)"
+```

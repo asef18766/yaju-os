@@ -1,0 +1,93 @@
+name: Build, test, and package
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI_IMAGE: hitcon-legacy-dfu:ci
+
+jobs:
+  build-test-package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build deployment image
+        run: docker build --tag "${CI_IMAGE}" .
+
+      - name: Run complete test suite
+        run: |
+          docker run --rm \
+            --entrypoint python \
+            --volume "${GITHUB_WORKSPACE}:/workspace:ro" \
+            --workdir /workspace \
+            --env PYTHONPATH=/workspace/src \
+            "${CI_IMAGE}" \
+            -m unittest discover -s tests -v
+
+      - name: Extract compiled player firmware
+        run: |
+          mkdir -p build/ci-handout
+          container_id=$(docker create "${CI_IMAGE}")
+          trap 'docker rm -f "${container_id}" >/dev/null 2>&1 || true' EXIT
+          docker cp \
+            "${container_id}:/app/handout/maintenance_application.bin" \
+            build/ci-handout/maintenance_application.bin
+          docker rm "${container_id}"
+          trap - EXIT
+
+      - name: Package release ZIP files
+        run: |
+          source_date_epoch=$(git show -s --format=%ct HEAD)
+          SOURCE_DATE_EPOCH="${source_date_epoch}" python3 scripts/package_release.py \
+            --handout build/ci-handout/maintenance_application.bin \
+            --output-dir dist \
+            --revision "${GITHUB_SHA}"
+
+      - name: Verify both release bundles
+        run: |
+          mkdir -p build/archive-smoke/attachment build/archive-smoke/service
+          python3 -m zipfile -e \
+            dist/hitcon-legacy-dfu-attachment.zip \
+            build/archive-smoke/attachment
+          python3 -m zipfile -e \
+            dist/hitcon-legacy-dfu-service.zip \
+            build/archive-smoke/service
+          cmp \
+            build/ci-handout/maintenance_application.bin \
+            build/archive-smoke/attachment/maintenance_application.bin
+          (cd build/archive-smoke/attachment && sha256sum --check SHA256SUMS)
+          (cd build/archive-smoke/service/hitcon-legacy-dfu-service && sha256sum --check SHA256SUMS)
+          (cd dist && sha256sum --check SHA256SUMS)
+          docker compose \
+            --file build/archive-smoke/service/hitcon-legacy-dfu-service/compose.yaml \
+            config --quiet
+          docker build \
+            --tag hitcon-legacy-dfu:archive-smoke \
+            build/archive-smoke/service/hitcon-legacy-dfu-service
+
+      - name: Upload release bundles
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hitcon-legacy-dfu-${{ github.sha }}
+          path: |
+            dist/hitcon-legacy-dfu-attachment.zip
+            dist/hitcon-legacy-dfu-service.zip
+            dist/SHA256SUMS
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30

@@ -14,10 +14,12 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
-COPY scripts ./scripts
+COPY scripts/fetch_nrf51_sdk11.sh ./scripts/fetch_nrf51_sdk11.sh
+COPY scripts/build_nrf51_sdk11_legacy_dfu.sh ./scripts/build_nrf51_sdk11_legacy_dfu.sh
+COPY scripts/build_maintenance_application.sh ./scripts/build_maintenance_application.sh
 COPY firmware ./firmware
-RUN ./scripts/fetch_nrf51_sdk11.sh \
-    && ./scripts/build_nrf51_sdk11_legacy_dfu.sh \
+RUN bash ./scripts/fetch_nrf51_sdk11.sh \
+    && bash ./scripts/build_nrf51_sdk11_legacy_dfu.sh \
     && bash ./scripts/build_maintenance_application.sh \
     && rm -rf vendor
 
