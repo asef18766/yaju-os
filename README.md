@@ -172,6 +172,10 @@ CI 會再解開 service ZIP、執行 `docker compose config` 並從解開後的�
 部署包漏檔。每次 push、pull request 與手動 dispatch 都會執行；成功後可在該 workflow run 的
 Artifacts 區下載。
 
+推送 `v*` tag 時，CI 還會在 GitHub Releases 建立對應版本，並把上述兩個 ZIP 與
+`SHA256SUMS` 發布為 Release assets。重新執行同一個 tag 的 workflow 時會覆寫既有 assets，
+不會建立重複的 Release。
+
 本機已建好 firmware 時，也可以產生相同格式：
 
 ```bash
