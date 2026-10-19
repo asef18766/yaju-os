@@ -2,7 +2,7 @@
 
 The transport boundary is deliberately small and explicit:
 
-* Bumble owns a real HCI controller connection and ATT/GATT server.
+* Bumble owns the HCI/ATT transport that represents the proprietary S130.
 * :class:`Nrf51Sdk11BootloaderRuntime` turns those callbacks into S130 BLE
   events for the compiled bootloader running under Qiling.
 * S130's radio implementation is still represented by the runtime's narrow
@@ -40,6 +40,8 @@ if TYPE_CHECKING:
     from bumble.device import Connection, Device
     from bumble.gatt import Characteristic
     from bumble.transport.common import Transport
+
+    from .s130_gatt import S130GattServer
 
 
 class ApplicationRuntime(Protocol):
@@ -436,7 +438,9 @@ class MaintenanceApplicationBumblePeripheral:
     characteristic asks the normal application to enter maintenance boot
     mode.  The authorization routine itself is executed in Qiling by
     :class:`MaintenanceFirmwareRuntime`; this class only owns HCI/GATT and the
-    physical disconnect that a reset would cause.
+    physical disconnect that a reset would cause. The compiled application
+    registers and handles its read-only ASCII service through S130 calls;
+    Bumble is only the emulated SoftDevice/ATT transport.
     """
 
     def __init__(
@@ -456,6 +460,7 @@ class MaintenanceApplicationBumblePeripheral:
         self._transport: Transport | None = None
         self._connection: Connection | None = None
         self._control: Characteristic[bytes] | None = None
+        self._firmware_gatt_server: S130GattServer | None = None
         self._write_lock: asyncio.Lock | None = None
         self._bootloader_requested: asyncio.Event | None = None
         self._handoff_ready: asyncio.Event | None = None
@@ -482,6 +487,8 @@ class MaintenanceApplicationBumblePeripheral:
             raise BumbleUnavailable(
                 "Bumble is optional; install the project with the 'transport' extra"
             ) from exc
+
+        from .s130_gatt import S130GattServer
 
         # Fail before exposing a radio if the intended player handout cannot
         # be loaded or has lost the firmware entry point.
@@ -511,13 +518,16 @@ class MaintenanceApplicationBumblePeripheral:
                 b"FN2\x01",
             )
             device.add_service(Service(MAINTENANCE_SERVICE_UUID, [control, info]))
+            firmware_gatt_server = S130GattServer.install(device, self.runtime)
             device.on(device.EVENT_CONNECTION, self._on_connection)
             advertising_data = bytes(
                 AdvertisingData(
                     [
                         (AdvertisingData.FLAGS, bytes((0x06,))),
                         (
-                            AdvertisingData.COMPLETE_LIST_OF_128_BIT_SERVICE_CLASS_UUIDS,
+                            # Both vendor UUIDs do not fit in a legacy 31-byte
+                            # advertisement. Discover the animation over GATT.
+                            AdvertisingData.INCOMPLETE_LIST_OF_128_BIT_SERVICE_CLASS_UUIDS,
                             UUID(MAINTENANCE_SERVICE_UUID).to_bytes(force_128=True),
                         ),
                     ]
@@ -531,6 +541,7 @@ class MaintenanceApplicationBumblePeripheral:
             self.device = device
             self._transport = transport
             self._control = control
+            self._firmware_gatt_server = firmware_gatt_server
             await device.power_on()
             await device.start_advertising(
                 auto_restart=False,
@@ -550,6 +561,9 @@ class MaintenanceApplicationBumblePeripheral:
             disconnect_task.cancel()
             with suppress(asyncio.CancelledError):
                 await disconnect_task
+        if self.runtime.connected:
+            with suppress(Exception):
+                await asyncio.to_thread(self.runtime.disconnect)
         device = self.device
         transport = self._transport
         self._clear_runtime_state()
@@ -584,6 +598,7 @@ class MaintenanceApplicationBumblePeripheral:
     def _clear_runtime_state(self) -> None:
         self._connection = None
         self._control = None
+        self._firmware_gatt_server = None
         self._write_lock = None
         self._bootloader_requested = None
         self._handoff_ready = None
@@ -599,6 +614,16 @@ class MaintenanceApplicationBumblePeripheral:
         if self._connection is connection:
             return
         self._connection = connection
+        firmware_gatt_server = self._firmware_gatt_server
+        if firmware_gatt_server is not None:
+            try:
+                firmware_gatt_server.connect_connection(
+                    connection, int(connection.handle)
+                )
+            except Exception:
+                self._connection = None
+                asyncio.create_task(connection.disconnect())
+                return
         connection.on(
             connection.EVENT_DISCONNECTION,
             lambda *_args: self._on_disconnection(connection),
@@ -606,6 +631,10 @@ class MaintenanceApplicationBumblePeripheral:
 
     def _on_disconnection(self, connection: Connection) -> None:
         if self._connection is connection:
+            firmware_gatt_server = self._firmware_gatt_server
+            if firmware_gatt_server is not None:
+                with suppress(Exception):
+                    firmware_gatt_server.disconnect_connection(connection)
             self._connection = None
 
     async def _on_control_write(self, connection: Connection, payload: bytes) -> None:

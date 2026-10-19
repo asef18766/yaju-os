@@ -5,6 +5,18 @@ set -euo pipefail
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repo_root=$(cd -- "${script_dir}/.." && pwd)
 compiler=$(command -v arm-none-eabi-gcc || true)
+default_sdk_root="${repo_root}/vendor/nRF5_SDK_11.0.0_89a8197"
+
+if [[ -n "${NRF5_SDK_ROOT:-}" ]]; then
+    sdk_root=${NRF5_SDK_ROOT}
+elif [[ -d "${default_sdk_root}/components/softdevice/s130/headers" ]]; then
+    sdk_root=${default_sdk_root}
+elif [[ -d "${repo_root}/vendor/components/softdevice/s130/headers" ]]; then
+    sdk_root="${repo_root}/vendor"
+else
+    printf 'SDK not found. Run scripts/fetch_nrf51_sdk11.sh first.\n' >&2
+    exit 1
+fi
 
 if [[ -z "${compiler}" ]]; then
     printf 'arm-none-eabi-gcc is required (Ubuntu: gcc-arm-none-eabi libnewlib-arm-none-eabi).\n' >&2
@@ -30,6 +42,7 @@ mkdir -p -- "${artifact_dir}"
     -fno-builtin \
     -fno-stack-protector \
     -nostdlib \
+    -I"${sdk_root}/components/softdevice/s130/headers" \
     -Wl,--gc-sections \
     -Wl,-T,"${linker_script}" \
     -Wl,-Map,"${artifact_dir}/maintenance_application.map" \

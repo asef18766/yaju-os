@@ -3,11 +3,13 @@ from __future__ import annotations
 import asyncio
 from contextlib import suppress
 import importlib.util
+import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
 
+from hitcon_legacy_dfu.inmu_king_art import INMU_KING_DANCE_FRAMES, INMU_KING_DANCE_LABELS
 from hitcon_legacy_dfu.nrf51_sdk11_runtime import Nrf51Sdk11BootloaderRuntime
 from hitcon_legacy_dfu.maintenance_runtime import MaintenanceFirmwareRuntime
 from hitcon_legacy_dfu.session_host import (
@@ -42,6 +44,54 @@ async def _wait_until(predicate, timeout: float = 15.0) -> None:
 class SessionHostIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         asyncio.get_running_loop().slow_callback_duration = 1.0
+
+    async def test_preview_script_reads_animation_through_the_public_proxy(self) -> None:
+        with tempfile.NamedTemporaryFile() as secret_file:
+            secret_file.write(b"CTF{animation_preview_test}")
+            secret_file.flush()
+            host = LegacyDfuSessionHost(
+                SessionHostConfig(
+                    listen_host="127.0.0.1",
+                    listen_port=0,
+                    secret_file=Path(secret_file.name),
+                    reference_bootloader_elf=REFERENCE_ELF,
+                    rootcanal_binary=_default_rootcanal_binary(),
+                    max_sessions=1,
+                    startup_timeout=15.0,
+                    maintenance_firmware_elf=MAINTENANCE_ELF,
+                )
+            )
+            await host.start()
+            preview = None
+            try:
+                script = Path(__file__).resolve().parents[1] / "scripts/preview_inmu_king_art.py"
+                preview = await asyncio.create_subprocess_exec(
+                    sys.executable,
+                    str(script),
+                    "--hci-transport", f"tcp-client:127.0.0.1:{host.listen_port}",
+                    "--loops", "1",
+                    "--fps", "1000",
+                    "--no-clear",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                await _wait_until(lambda: host.active_session_count == 1)
+                output, errors = await asyncio.wait_for(preview.communicate(), timeout=30)
+                self.assertEqual(preview.returncode, 0, errors.decode())
+                expected = "".join(
+                    f"frame {index}/{len(INMU_KING_DANCE_FRAMES)} | {label}\n"
+                    f"{frame.decode('ascii')}\n\n"
+                    for index, (frame, label) in enumerate(
+                        zip(INMU_KING_DANCE_FRAMES, INMU_KING_DANCE_LABELS), start=1
+                    )
+                )
+                self.assertEqual(output.decode(), expected)
+                await _wait_until(lambda: host.active_session_count == 0)
+            finally:
+                if preview is not None and preview.returncode is None:
+                    preview.kill()
+                    await preview.communicate()
+                await host.stop()
 
     async def test_each_player_tcp_connection_gets_and_releases_a_direct_elf_target(self) -> None:
         """The public TCP socket owns one Rootcanal/Qiling pair until EOF."""

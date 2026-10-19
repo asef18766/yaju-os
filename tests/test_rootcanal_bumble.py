@@ -14,12 +14,15 @@ from pathlib import Path
 from hitcon_legacy_dfu.bootloader import BootloaderConfig, LegacyDfuBootloader
 from hitcon_legacy_dfu.bridge import LegacyDfuGattBridge
 from hitcon_legacy_dfu.bumble_adapter import LegacyDfuBumblePeripheral
+from hitcon_legacy_dfu.inmu_king_art import INMU_KING_DANCE_FRAMES
 from hitcon_legacy_dfu.maintenance_runtime import MaintenanceFirmwareRuntime
 from hitcon_legacy_dfu.payloads import make_gpio_dump_payload, make_gpio_probe_payload
 from hitcon_legacy_dfu.protocol import (
     CONSOLE_OUTPUT_UUID,
     CONSOLE_SERVICE_UUID,
     CONTROL_POINT_UUID,
+    INMU_KING_FRAME_UUID,
+    INMU_KING_SERVICE_UUID,
     MAINTENANCE_CONTROL_UUID,
     MAINTENANCE_SERVICE_UUID,
     PACKET_UUID,
@@ -251,6 +254,19 @@ class RootcanalBumbleIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     len(await initial_peer.discover_service(UUID(SERVICE_UUID))),
                     0,
                 )
+                animation_services = await initial_peer.discover_service(
+                    UUID(INMU_KING_SERVICE_UUID)
+                )
+                self.assertEqual(len(animation_services), 1)
+                await initial_peer.discover_characteristics(service=animation_services[0])
+                frame = initial_peer.get_characteristics_by_uuid(
+                    UUID(INMU_KING_FRAME_UUID), animation_services[0]
+                )[0]
+                # Keep the default MTU 23: this exercises real HCI Read Blob
+                # requests, not just a one-packet read of the 125-byte frame.
+                self.assertEqual(initial_connection.att_mtu, 23)
+                for expected in INMU_KING_DANCE_FRAMES + INMU_KING_DANCE_FRAMES[:4]:
+                    self.assertEqual(await initial_peer.read_value(frame), expected)
                 maintenance_services = await initial_peer.discover_service(
                     UUID(MAINTENANCE_SERVICE_UUID)
                 )
@@ -272,6 +288,9 @@ class RootcanalBumbleIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 )
                 dfu_peer = Peer(dfu_connection)
                 self.assertEqual(len(await dfu_peer.discover_service(UUID(SERVICE_UUID))), 1)
+                self.assertEqual(
+                    await dfu_peer.discover_service(UUID(INMU_KING_SERVICE_UUID)), []
+                )
             finally:
                 if dfu_connection is not None:
                     with suppress(Exception):

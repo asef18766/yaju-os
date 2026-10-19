@@ -17,6 +17,7 @@ SECTIONS
     .text :
     {
         KEEP(*(.text.maintenance_command))
+        KEEP(*(.text.firmware_api*))
         *(.text*)
         *(.rodata*)
         . = ALIGN(4);

@@ -29,6 +29,11 @@ MAINTENANCE_SERVICE_UUID = "5a1c0001-7c5d-4c8d-942c-a786c1d58b6d"
 MAINTENANCE_CONTROL_UUID = "5a1c0002-7c5d-4c8d-942c-a786c1d58b6d"
 MAINTENANCE_INFO_UUID = "5a1c0003-7c5d-4c8d-942c-a786c1d58b6d"
 
+# Public UUID contract registered by the compiled normal-application firmware
+# through S130. These constants are only for clients and consistency tests.
+INMU_KING_SERVICE_UUID = "5a1c1001-7c5d-4c8d-942c-a786c1d58b6d"
+INMU_KING_FRAME_UUID = "5a1c1002-7c5d-4c8d-942c-a786c1d58b6d"
+
 
 class DfuOpcode(IntEnum):
     """Legacy BLE DFU control-point operations."""
