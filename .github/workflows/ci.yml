@@ -18,7 +18,7 @@ env:
 jobs:
   build-test-package:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     permissions:
       contents: read
 
@@ -41,7 +41,7 @@ jobs:
             "${CI_IMAGE}" \
             -m unittest discover -s tests -v
 
-      - name: Extract compiled player firmware
+      - name: Extract compiled player runtime artifacts
         run: |
           mkdir -p build/ci-handout
           container_id=$(docker create "${CI_IMAGE}")
@@ -49,6 +49,12 @@ jobs:
           docker cp \
             "${container_id}:/app/handout/maintenance_application.bin" \
             build/ci-handout/maintenance_application.bin
+          docker cp \
+            "${container_id}:/app/artifacts/maintenance_application/maintenance_application.emulator.elf" \
+            build/ci-handout/maintenance_application.emulator.elf
+          docker cp \
+            "${container_id}:/app/artifacts/nrf51_sdk11_legacy_dfu/nrf51422_xxac.emulator.elf" \
+            build/ci-handout/nrf51422_xxac.emulator.elf
           docker rm "${container_id}"
           trap - EXIT
 
@@ -57,6 +63,8 @@ jobs:
           source_date_epoch=$(git show -s --format=%ct HEAD)
           SOURCE_DATE_EPOCH="${source_date_epoch}" python3 scripts/package_release.py \
             --handout build/ci-handout/maintenance_application.bin \
+            --maintenance-firmware-elf build/ci-handout/maintenance_application.emulator.elf \
+            --reference-bootloader-elf build/ci-handout/nrf51422_xxac.emulator.elf \
             --output-dir dist \
             --revision "${GITHUB_SHA}"
 
@@ -72,6 +80,12 @@ jobs:
           cmp \
             build/ci-handout/maintenance_application.bin \
             build/archive-smoke/attachment/maintenance_application.bin
+          cmp \
+            build/ci-handout/maintenance_application.emulator.elf \
+            build/archive-smoke/attachment/artifacts/maintenance_application/maintenance_application.elf
+          cmp \
+            build/ci-handout/nrf51422_xxac.emulator.elf \
+            build/archive-smoke/attachment/artifacts/nrf51_sdk11_legacy_dfu/nrf51422_xxac.elf
           (cd build/archive-smoke/attachment && sha256sum --check SHA256SUMS)
           (cd build/archive-smoke/service/hitcon-legacy-dfu-service && sha256sum --check SHA256SUMS)
           (cd dist && sha256sum --check SHA256SUMS)
@@ -81,6 +95,46 @@ jobs:
           docker build \
             --tag hitcon-legacy-dfu:archive-smoke \
             build/archive-smoke/service/hitcon-legacy-dfu-service
+
+      - name: Boot attachment lab and read GATT over Bluetooth
+        working-directory: build/archive-smoke/attachment
+        run: |
+          project=attachment-smoke
+          export HCI_PORT=16402
+          cleanup() {
+            docker compose --project-name "${project}" down --volumes --remove-orphans
+          }
+          trap cleanup EXIT
+          docker compose --project-name "${project}" config --quiet
+          docker compose --project-name "${project}" build
+          docker compose --project-name "${project}" up --detach host
+
+          probe_output=''
+          for attempt in 1 2 3 4 5; do
+            if probe_output=$(docker compose --project-name "${project}" run --rm --no-deps tools probe.py); then
+              break
+            fi
+            if [[ "${attempt}" == 5 ]]; then
+              docker compose --project-name "${project}" logs host
+              exit 1
+            fi
+            sleep 1
+          done
+          printf '%s\n' "${probe_output}"
+          grep --fixed-strings \
+            'local target OK: read 125 bytes over GATT' \
+            <<<"${probe_output}"
+
+          # This solution-bearing smoke client is copied only after the ZIP's
+          # manifest/scope checks and is never part of either release bundle.
+          cp "${GITHUB_WORKSPACE}/scripts/smoke_player_attachment.py" \
+            workspace/organizer-smoke.py
+          exploit_output=$(docker compose --project-name "${project}" run \
+            --rm --no-deps tools organizer-smoke.py)
+          printf '%s\n' "${exploit_output}"
+          grep --fixed-strings \
+            "local exploit OK: recovered b'CTF{local_emulator_test_flag}\\n'" \
+            <<<"${exploit_output}"
 
       - name: Upload release bundles
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

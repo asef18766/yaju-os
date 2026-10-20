@@ -104,14 +104,16 @@ FLAG_FILE=./flag.txt docker compose up --build
 
 Host 對外只開 `6402/tcp`，這是 HCI/H4 TCP，不是 DFU-over-TCP。用 `HCI_PORT=7402` 可改 port。
 
-Compose image 內含給參賽者的 raw firmware：
+Compose image 內含給參賽者逆向用的 raw firmware：
 
 ```bash
 docker compose cp host:/app/handout/maintenance_application.bin ./maintenance_application.bin
 ```
 
-請只把這個 `.bin` 放進題目附件；它同時包含 maintenance gate、動畫 GATT metadata 與 ASCII
-frames。`firmware/maintenance_application.c` 是出題端 build source。
+正式 attachment 除了這個 `.bin`，也包含可在本機啟動相同 Rootcanal + Qiling target 的 Docker
+Compose lab、player-safe Python harness、symbol-pruned runtime ELF、固定的 local test flag 與一支無害
+GATT probe。`firmware/maintenance_application.c` 仍只存在出題端 source／service bundle，不會放進
+player attachment；已知 maintenance command 與範例 exploit payload 也不會被打包。
 
 ## 本機建置
 
@@ -162,14 +164,18 @@ GitHub Actions 會使用專案的 Dockerfile 建置正式映像、執行完整�
 artifact，其中固定包含：
 
 - `hitcon-legacy-dfu-attachment.zip`：給參賽者的
-  `maintenance_application.bin`、簡短說明、build metadata 與 SHA-256 manifest；不含 firmware
-  source。
+  `maintenance_application.bin`、Rootcanal/Qiling emulator harness、symbol-pruned runtime ELF、Docker
+  Compose local lab、公開 local test flag、GATT probe、build metadata 與 SHA-256 manifest；不含
+  firmware source、organizer tests、已知 maintenance command 或 solution payload generator。
 - `hitcon-legacy-dfu-service.zip`：可直接部署的 Docker Compose build context、部署說明與
   SHA-256 manifest；只含 `flag.example`，不含真實 flag、SDK、cache、artifacts 或 tests。
 - `SHA256SUMS`：上述兩個 ZIP 自身的 checksum。
 
-CI 會再解開 service ZIP、執行 `docker compose config` 並從解開後的內容重新 build image，避免
-部署包漏檔。每次 push、pull request 與手動 dispatch 都會執行；成功後可在該 workflow run 的
+CI 會解開兩個 ZIP：service bundle 會執行 `docker compose config` 並從解開後的內容重新 build；
+player attachment 也會從解開後的內容 build、啟動 session host，再由另一個 container 經過公開
+HCI/H4 port 做一次真實 BLE GATT read；最後用不會打包的 organizer smoke client 完整走過
+maintenance reset、unsigned DFU、Thumb GPIO/UART payload 與 console flag read，確認本機 lab 真的能
+測 exploit。每次 push、pull request 與手動 dispatch 都會執行；成功後可在該 workflow run 的
 Artifacts 區下載。
 
 推送 `v*` tag 時，CI 還會在 GitHub Releases 建立對應版本，並把上述兩個 ZIP 與
@@ -182,5 +188,7 @@ Artifacts 區下載。
 SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)" \
 python3 scripts/package_release.py \
   --handout artifacts/maintenance_application/maintenance_application.bin \
+  --maintenance-firmware-elf artifacts/maintenance_application/maintenance_application.emulator.elf \
+  --reference-bootloader-elf artifacts/nrf51_sdk11_legacy_dfu/nrf51422_xxac.emulator.elf \
   --revision "$(git rev-parse HEAD)"
 ```

@@ -1,0 +1,1 @@
+CTF{local_emulator_test_flag}

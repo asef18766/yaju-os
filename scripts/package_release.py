@@ -21,6 +21,37 @@ SERVICE_ARCHIVE = "hitcon-legacy-dfu-service.zip"
 SERVICE_DIRECTORY = "hitcon-legacy-dfu-service"
 DEFAULT_SOURCE_DATE_EPOCH = 315532800  # 1980-01-01, ZIP's earliest date.
 
+ATTACHMENT_STATIC_FILES = (
+    ("packaging/attachment/.dockerignore", ".dockerignore"),
+    ("packaging/attachment/Dockerfile", "Dockerfile"),
+    ("packaging/attachment/README.md", "README.md"),
+    ("packaging/attachment/compose.yaml", "compose.yaml"),
+    ("packaging/attachment/local_flag.txt", "local_flag.txt"),
+    ("packaging/attachment/probe.py", "workspace/probe.py"),
+    ("pyproject.toml", "pyproject.toml"),
+)
+
+# The local target needs the transport and emulator harness, but solution-only
+# helpers (notably payloads.py), organizer tests, firmware source, and the
+# offline animation frames are deliberately absent from the player bundle.
+ATTACHMENT_RUNTIME_FILES = (
+    "src/hitcon_legacy_dfu/__init__.py",
+    "src/hitcon_legacy_dfu/bootloader.py",
+    "src/hitcon_legacy_dfu/bridge.py",
+    "src/hitcon_legacy_dfu/bumble_adapter.py",
+    "src/hitcon_legacy_dfu/client.py",
+    "src/hitcon_legacy_dfu/crc.py",
+    "src/hitcon_legacy_dfu/hardware.py",
+    "src/hitcon_legacy_dfu/maintenance_runtime.py",
+    "src/hitcon_legacy_dfu/nrf51_sdk11_runtime.py",
+    "src/hitcon_legacy_dfu/protocol.py",
+    "src/hitcon_legacy_dfu/qiling_rootcanal.py",
+    "src/hitcon_legacy_dfu/qiling_runtime.py",
+    "src/hitcon_legacy_dfu/runner.py",
+    "src/hitcon_legacy_dfu/s130_gatt.py",
+    "src/hitcon_legacy_dfu/session_host.py",
+)
+
 SERVICE_FILES = (
     ".dockerignore",
     "Dockerfile",
@@ -71,6 +102,18 @@ def parse_args() -> argparse.Namespace:
         help="compiled maintenance_application.bin produced by the firmware build",
     )
     parser.add_argument(
+        "--reference-bootloader-elf",
+        type=Path,
+        required=True,
+        help="symbol-pruned Nordic SDK 11 bootloader ELF for the player emulator",
+    )
+    parser.add_argument(
+        "--maintenance-firmware-elf",
+        type=Path,
+        required=True,
+        help="symbol-pruned normal-application ELF for the player emulator",
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
         default=REPOSITORY_ROOT / "dist",
@@ -117,6 +160,15 @@ def read_source(relative_path: str) -> ArchiveEntry:
     return ArchiveEntry(source.read_bytes(), mode)
 
 
+def read_artifact(path: Path, label: str) -> ArchiveEntry:
+    if path.is_symlink() or not path.is_file():
+        raise FileNotFoundError(f"{label} must be a regular file: {path}")
+    data = path.read_bytes()
+    if not data:
+        raise ValueError(f"{label} must not be empty")
+    return ArchiveEntry(data)
+
+
 def checksum_manifest(entries: dict[str, ArchiveEntry]) -> bytes:
     lines = []
     for name in sorted(entries):
@@ -125,26 +177,40 @@ def checksum_manifest(entries: dict[str, ArchiveEntry]) -> bytes:
     return "".join(lines).encode("ascii")
 
 
-def attachment_entries(handout: Path, revision: str) -> dict[str, ArchiveEntry]:
-    if handout.is_symlink() or not handout.is_file():
-        raise FileNotFoundError(f"handout must be a regular file: {handout}")
-    firmware = handout.read_bytes()
-    if not firmware:
-        raise ValueError("handout firmware must not be empty")
-    firmware_sha256 = hashlib.sha256(firmware).hexdigest()
+def attachment_entries(
+    handout: Path,
+    reference_bootloader_elf: Path,
+    maintenance_firmware_elf: Path,
+    revision: str,
+) -> dict[str, ArchiveEntry]:
+    firmware = read_artifact(handout, "handout firmware")
+    bootloader = read_artifact(reference_bootloader_elf, "reference bootloader ELF")
+    maintenance = read_artifact(maintenance_firmware_elf, "maintenance firmware ELF")
     entries = {
-        "BUILD_INFO": ArchiveEntry(
-            (
-                "bundle=player-attachment\n"
-                f"revision={revision}\n"
-                "target=nrf51422_xxac\n"
-                "application_base=0x0001b000\n"
-                f"firmware_sha256={firmware_sha256}\n"
-            ).encode("ascii")
-        ),
-        "README.txt": read_source("packaging/attachment/README.txt"),
-        "maintenance_application.bin": ArchiveEntry(firmware),
+        archive_path: read_source(source_path)
+        for source_path, archive_path in ATTACHMENT_STATIC_FILES
     }
+    entries.update({path: read_source(path) for path in ATTACHMENT_RUNTIME_FILES})
+    entries.update(
+        {
+            "BUILD_INFO": ArchiveEntry(
+                (
+                    "bundle=player-attachment\n"
+                    f"revision={revision}\n"
+                    "target=nrf51422_xxac\n"
+                    "application_base=0x0001b000\n"
+                    f"firmware_sha256={hashlib.sha256(firmware.data).hexdigest()}\n"
+                    "maintenance_emulator_elf_sha256="
+                    f"{hashlib.sha256(maintenance.data).hexdigest()}\n"
+                    "bootloader_emulator_elf_sha256="
+                    f"{hashlib.sha256(bootloader.data).hexdigest()}\n"
+                ).encode("ascii")
+            ),
+            "maintenance_application.bin": firmware,
+            "artifacts/maintenance_application/maintenance_application.elf": maintenance,
+            "artifacts/nrf51_sdk11_legacy_dfu/nrf51422_xxac.elf": bootloader,
+        }
+    )
     entries["SHA256SUMS"] = ArchiveEntry(checksum_manifest(entries))
     return entries
 
@@ -183,7 +249,13 @@ def write_zip(
             archive.writestr(information, entries[name].data, compresslevel=9)
 
 
-def package(handout: Path, output_dir: Path, revision: str) -> tuple[Path, Path, Path]:
+def package(
+    handout: Path,
+    reference_bootloader_elf: Path,
+    maintenance_firmware_elf: Path,
+    output_dir: Path,
+    revision: str,
+) -> tuple[Path, Path, Path]:
     revision = checked_revision(revision)
     timestamp = zip_timestamp()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -192,7 +264,12 @@ def package(handout: Path, output_dir: Path, revision: str) -> tuple[Path, Path,
 
     write_zip(
         attachment_path,
-        attachment_entries(handout, revision),
+        attachment_entries(
+            handout,
+            reference_bootloader_elf,
+            maintenance_firmware_elf,
+            revision,
+        ),
         timestamp,
     )
     write_zip(
@@ -217,7 +294,13 @@ def package(handout: Path, output_dir: Path, revision: str) -> tuple[Path, Path,
 def main() -> int:
     args = parse_args()
     try:
-        outputs = package(args.handout, args.output_dir, args.revision)
+        outputs = package(
+            args.handout,
+            args.reference_bootloader_elf,
+            args.maintenance_firmware_elf,
+            args.output_dir,
+            args.revision,
+        )
     except (FileNotFoundError, OSError, ValueError) as exc:
         print(f"Packaging failed: {exc}", file=sys.stderr)
         return 1

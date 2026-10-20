@@ -1,0 +1,31 @@
+services:
+  host:
+    image: hitcon-legacy-dfu-local:latest
+    platform: linux/amd64
+    build:
+      context: .
+    init: true
+    ports:
+      - "${HCI_PORT:-6402}:6402"
+    secrets:
+      - source: local_flag
+        target: local_flag
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=64m
+
+  tools:
+    image: hitcon-legacy-dfu-local:latest
+    platform: linux/amd64
+    profiles:
+      - tools
+    entrypoint:
+      - python
+    working_dir: /workspace
+    volumes:
+      - ./workspace:/workspace:ro
+    depends_on:
+      - host
+
+secrets:
+  local_flag:
+    file: ./local_flag.txt

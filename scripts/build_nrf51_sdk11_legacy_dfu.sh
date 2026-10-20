@@ -46,6 +46,37 @@ install -m 0644 "${build_dir}/${TARGET}.out" "${artifact_dir}/${TARGET}.elf"
 install -m 0644 "${build_dir}/${TARGET}.hex" "${artifact_dir}/${TARGET}.hex"
 install -m 0644 "${build_dir}/${TARGET}.map" "${artifact_dir}/${TARGET}.map"
 
+# Produce the small ELF used by the player-facing Qiling lab.  The compiled
+# bootloader adapter needs selected SDK state/function symbols plus the local
+# ``sd_*`` SVC wrappers, but it does not need the SDK's complete debug symbol
+# table.  Keeping only this runtime ABI reduces the attachment from hundreds
+# of KiB and avoids publishing unrelated build metadata.
+keep_symbols=$(mktemp)
+trap 'rm -f -- "${keep_symbols}"' EXIT
+{
+    arm-none-eabi-nm -a --format=posix "${artifact_dir}/${TARGET}.elf" \
+        | awk '$2 ~ /^[tT]$/ && $1 ~ /^sd_/ { print $1 }'
+    printf '%s\n' \
+        Reset_Handler \
+        dfu_init_prevalidate \
+        dfu_init_postvalidate \
+        ble_evt_dispatch \
+        pstorage_sys_event_handler \
+        app_timer_start \
+        app_timer_stop \
+        m_dfu \
+        m_dfu_state \
+        m_image_size \
+        m_cmd_queue
+} | sort -u > "${keep_symbols}"
+arm-none-eabi-objcopy \
+    --strip-all \
+    --keep-symbols="${keep_symbols}" \
+    "${artifact_dir}/${TARGET}.elf" \
+    "${artifact_dir}/${TARGET}.emulator.elf"
+rm -f -- "${keep_symbols}"
+trap - EXIT
+
 # The SDK Makefile's raw .bin includes a gap up to UICR at 0x10001014 and is
 # roughly 256 MiB. Emit only the actual flash-resident sections instead.
 arm-none-eabi-objcopy -O binary \
@@ -65,10 +96,12 @@ arm-none-eabi-size -A "${artifact_dir}/${TARGET}.elf" > "${artifact_dir}/size.tx
     printf 'compiler=%s\n' "$(arm-none-eabi-gcc --version | head -1)"
     printf 'flash_base=0x0003c000\n'
     printf 'flash_binary=%s_flash.bin\n' "${TARGET}"
+    printf 'player_emulator_elf=%s.emulator.elf\n' "${TARGET}"
 } > "${artifact_dir}/BUILD_INFO"
 (
     cd "${artifact_dir}"
-    sha256sum "${TARGET}.elf" "${TARGET}.hex" "${TARGET}.map" "${TARGET}_flash.bin" "size.txt" "BUILD_INFO"
+    sha256sum "${TARGET}.elf" "${TARGET}.emulator.elf" "${TARGET}.hex" \
+        "${TARGET}.map" "${TARGET}_flash.bin" "size.txt" "BUILD_INFO"
 ) > "${artifact_dir}/SHA256SUMS"
 
 printf 'Built official nRF51 legacy BLE DFU bootloader artifacts in %s\n' "${artifact_dir}"

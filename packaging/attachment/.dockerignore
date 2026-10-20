@@ -1,0 +1,8 @@
+BUILD_INFO
+SHA256SUMS
+README.md
+local_flag.txt
+maintenance_application.bin
+workspace
+**/__pycache__
+**/*.pyc
