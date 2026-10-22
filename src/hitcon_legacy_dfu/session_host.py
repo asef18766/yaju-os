@@ -41,14 +41,12 @@ class SessionHostConfig:
     listen_host: str
     listen_port: int
     secret_file: Path
-    reference_bootloader_elf: Path | None
+    board_runtime: Path
     rootcanal_binary: Path
     max_sessions: int = 8
     startup_timeout: float = 30.0
     shutdown_timeout: float = 5.0
     instruction_budget: int = 5_000
-    maintenance_firmware_elf: Path | None = None
-    board_runtime: Path | None = None
 
     def validate(self) -> None:
         if not 0 <= self.listen_port <= 0xFFFF:
@@ -63,26 +61,7 @@ class SessionHostConfig:
             raise ValueError("instruction_budget must be positive")
         if not self.secret_file.is_file() or not self.secret_file.read_bytes():
             raise ValueError("secret_file must exist and contain at least one byte")
-        if self.board_runtime is not None:
-            if self.reference_bootloader_elf is not None or self.maintenance_firmware_elf is not None:
-                raise ValueError(
-                    "board_runtime cannot be combined with per-phase ELF artifacts"
-                )
-            BoardRuntimeArtifact.load(self.board_runtime)
-        else:
-            if self.reference_bootloader_elf is None or not self.reference_bootloader_elf.is_file():
-                raise ValueError(
-                    "reference_bootloader_elf does not exist: "
-                    f"{self.reference_bootloader_elf}"
-                )
-            if (
-                self.maintenance_firmware_elf is not None
-                and not self.maintenance_firmware_elf.is_file()
-            ):
-                raise ValueError(
-                    "maintenance_firmware_elf does not exist: "
-                    f"{self.maintenance_firmware_elf}"
-                )
+        BoardRuntimeArtifact.load(self.board_runtime)
         if not self.rootcanal_binary.is_file():
             raise ValueError(f"rootcanal_binary does not exist: {self.rootcanal_binary}")
 
@@ -281,26 +260,9 @@ class LegacyDfuSessionHost:
                 f"tcp-client:127.0.0.1:{session.hci_port}",
                 "--instruction-budget",
                 str(self.config.instruction_budget),
+                "--board-runtime",
+                str(self.config.board_runtime),
             ]
-            if self.config.board_runtime is not None:
-                target_arguments.extend(
-                    ("--board-runtime", str(self.config.board_runtime))
-                )
-            else:
-                assert self.config.reference_bootloader_elf is not None
-                target_arguments.extend(
-                    (
-                        "--reference-bootloader-elf",
-                        str(self.config.reference_bootloader_elf),
-                    )
-                )
-            if (
-                self.config.board_runtime is None
-                and self.config.maintenance_firmware_elf is not None
-            ):
-                target_arguments.extend(
-                    ("--maintenance-firmware-elf", str(self.config.maintenance_firmware_elf))
-                )
             session.target = await asyncio.create_subprocess_exec(
                 *target_arguments,
                 stdout=asyncio.subprocess.PIPE,
@@ -482,16 +444,6 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="combined board_flash.bin + runtime_symbols.json directory",
     )
-    parser.add_argument(
-        "--reference-bootloader-elf",
-        type=Path,
-        help="legacy development option; use --board-runtime for packaged targets",
-    )
-    parser.add_argument(
-        "--maintenance-firmware-elf",
-        type=Path,
-        help="legacy development option paired with --reference-bootloader-elf",
-    )
     parser.add_argument("--rootcanal-binary", type=Path)
     parser.add_argument("--max-sessions", type=int, default=8)
     parser.add_argument("--startup-timeout", type=float, default=30.0)
@@ -506,29 +458,15 @@ async def serve(args: argparse.Namespace) -> None:
         if args.rootcanal_binary is not None
         else _default_rootcanal_binary()
     )
-    reference_elf = (
-        args.reference_bootloader_elf.resolve()
-        if args.reference_bootloader_elf is not None
-        else None
+    board_runtime = (
+        args.board_runtime.resolve()
+        if args.board_runtime is not None
+        else BoardRuntimeArtifact.repository_path()
     )
-    maintenance_elf = (
-        args.maintenance_firmware_elf.resolve()
-        if args.maintenance_firmware_elf is not None
-        else None
-    )
-    board_runtime = args.board_runtime.resolve() if args.board_runtime is not None else None
-    if board_runtime is None and reference_elf is None and maintenance_elf is None:
-        board_runtime = BoardRuntimeArtifact.repository_path()
-    if board_runtime is not None and (reference_elf is not None or maintenance_elf is not None):
-        raise ValueError(
-            "--board-runtime cannot be combined with the legacy per-phase ELF options"
-        )
     config = SessionHostConfig(
         listen_host=args.listen_host,
         listen_port=args.listen_port,
         secret_file=args.secret_file.resolve(),
-        reference_bootloader_elf=reference_elf,
-        maintenance_firmware_elf=maintenance_elf,
         board_runtime=board_runtime,
         rootcanal_binary=rootcanal_binary,
         max_sessions=args.max_sessions,

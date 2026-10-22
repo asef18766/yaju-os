@@ -79,7 +79,9 @@ docker compose down
   regions yourself if your reverse-engineering tool requires separate images.
 - `artifacts/board_runtime/runtime_symbols.json` contains only the narrow
   entry-point/SVC ABI metadata Qiling needs to execute that raw image.
-- `src/` is the player-safe emulator/transport harness.
+- `src/` is the minimal production board-image emulator/transport harness;
+  Python DFU models, clients, payload helpers, and offline animation data are
+  intentionally excluded.
 - `workspace/` is bind-mounted into the tools container for your scripts.
 - `local_flag.txt` is the non-secret flag exposed by the local GPIO model.
 

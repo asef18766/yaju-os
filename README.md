@@ -157,8 +157,8 @@ hitcon-legacy-dfu \
   --board-runtime artifacts/board_runtime
 ```
 
-舊的 per-phase ELF flags 僅保留給 runtime 開發測試；Compose 與 release attachment 固定使用同一包
-`board_runtime` 走完整兩階段模式。
+CLI、Compose 與 release attachment 都固定使用同一包 `board_runtime` 走完整兩階段模式；不再提供
+per-phase ELF 或 Python DFU model 的 production fallback。
 
 ## 測試
 
@@ -183,7 +183,8 @@ artifact，其中固定包含：
   Compose local lab、公開 local test flag、GATT probe、build metadata 與 SHA-256 manifest；不含
   firmware source、organizer tests、已知 maintenance command 或 solution payload generator。
 - `hitcon-legacy-dfu-service.zip`：可直接部署的 Docker Compose build context、部署說明與
-  SHA-256 manifest；只含 `flag.example`，不含真實 flag、SDK、cache、artifacts 或 tests。
+  SHA-256 manifest；`src/` 只含 production board runtime，不含 Python DFU model、client、payload
+  helper 或離線動畫資料；只含 `flag.example`，不含真實 flag、SDK、cache、artifacts 或 tests。
 - `SHA256SUMS`：上述兩個 ZIP 自身的 checksum。
 
 CI 會解開兩個 ZIP：service bundle 會執行 `docker compose config` 並從解開後的內容重新 build；

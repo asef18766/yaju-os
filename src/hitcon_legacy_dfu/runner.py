@@ -9,11 +9,11 @@ from pathlib import Path
 import signal
 from typing import Sequence
 
-from .bootloader import BootloaderConfig, LegacyDfuBootloader
 from .board_runtime import BoardRuntimeArtifact
-from .bridge import LegacyDfuGattBridge
-from .bumble_adapter import LegacyDfuBumblePeripheral
+from .hardware import NRF51_SRAM_BASE, NRF51_SRAM_SIZE
 from .maintenance_runtime import MaintenanceFirmwareRuntime
+from .nrf51_sdk11_runtime import Nrf51Sdk11BootloaderRuntime
+from .qiling_rootcanal import LayeredNrf51BumblePeripheral
 from .qiling_runtime import QilingRuntime
 
 
@@ -47,26 +47,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--board-runtime",
         type=Path,
+        required=True,
         help=(
             "directory containing one board_flash.bin and runtime_symbols.json; "
             "selects both the maintenance and bootloader reset phases"
-        ),
-    )
-    parser.add_argument(
-        "--reference-bootloader-elf",
-        type=Path,
-        help=(
-            "Nordic SDK 11 nRF51 ELF to boot under Qiling; when supplied, "
-            "Rootcanal GATT writes drive the compiled legacy-DFU implementation "
-            "rather than the Python challenge model"
-        ),
-    )
-    parser.add_argument(
-        "--maintenance-firmware-elf",
-        type=Path,
-        help=(
-            "normal application ELF that must authorize the reset into legacy DFU; "
-            "requires --reference-bootloader-elf"
         ),
     )
     return parser
@@ -79,77 +63,24 @@ async def serve(args: argparse.Namespace) -> None:
     if not secret:
         raise ValueError("--secret-file must not be empty")
 
-    config = BootloaderConfig.nrf51_sdk11_pca10028_s130()
+    board = BoardRuntimeArtifact.load(args.board_runtime)
     runtime = QilingRuntime(
         secret,
-        flash_size=config.flash_size,
-        sram_base=config.sram_base,
-        sram_size=config.sram_size,
+        flash_size=len(board.flash),
+        sram_base=NRF51_SRAM_BASE,
+        sram_size=NRF51_SRAM_SIZE,
         instruction_budget=args.instruction_budget,
     )
-    if args.board_runtime is not None and (
-        args.reference_bootloader_elf is not None
-        or args.maintenance_firmware_elf is not None
-    ):
-        raise ValueError(
-            "--board-runtime cannot be combined with the legacy per-phase ELF options"
-        )
-    if args.maintenance_firmware_elf is not None and args.reference_bootloader_elf is None:
-        raise ValueError("--maintenance-firmware-elf requires --reference-bootloader-elf")
-
-    reference_runtime = None
-    maintenance_runtime = None
-    if args.board_runtime is not None:
-        # Validate once up front; both phase runtimes then load the exact same
-        # immutable flash image and select their reset entry from its metadata.
-        BoardRuntimeArtifact.load(args.board_runtime)
-        from .nrf51_sdk11_runtime import Nrf51Sdk11BootloaderRuntime
-
-        reference_runtime = Nrf51Sdk11BootloaderRuntime.from_board_runtime(
-            args.board_runtime
-        )
-        maintenance_runtime = MaintenanceFirmwareRuntime.from_board_runtime(
-            args.board_runtime
-        )
-    elif args.reference_bootloader_elf is not None:
-        from .nrf51_sdk11_runtime import Nrf51Sdk11BootloaderRuntime
-
-        reference_runtime = Nrf51Sdk11BootloaderRuntime(args.reference_bootloader_elf)
-        if args.maintenance_firmware_elf is not None:
-            maintenance_runtime = MaintenanceFirmwareRuntime(args.maintenance_firmware_elf)
-
-    if reference_runtime is None:
-        bootloader = LegacyDfuBootloader(
-            config=config,
-            runtime=runtime,
-        )
-        peripheral = LegacyDfuBumblePeripheral(
-            LegacyDfuGattBridge(bootloader),
-            name=args.name,
-            address=args.address,
-        )
-    else:
-        if maintenance_runtime is None:
-            from .qiling_rootcanal import Nrf51Sdk11BumblePeripheral
-
-            peripheral = Nrf51Sdk11BumblePeripheral(
-                reference_runtime,
-                runtime,
-                application_base=config.application_base,
-                name=args.name,
-                address=args.address,
-            )
-        else:
-            from .qiling_rootcanal import LayeredNrf51BumblePeripheral
-
-            peripheral = LayeredNrf51BumblePeripheral(
-                maintenance_runtime,
-                reference_runtime,
-                runtime,
-                application_base=config.application_base,
-                name=args.name,
-                address=args.address,
-            )
+    reference_runtime = Nrf51Sdk11BootloaderRuntime.from_board_runtime(args.board_runtime)
+    maintenance_runtime = MaintenanceFirmwareRuntime.from_board_runtime(args.board_runtime)
+    peripheral = LayeredNrf51BumblePeripheral(
+        maintenance_runtime,
+        reference_runtime,
+        runtime,
+        application_base=board.application_base,
+        name=args.name,
+        address=args.address,
+    )
     stopped = asyncio.Event()
     loop = asyncio.get_running_loop()
     for signum in (signal.SIGINT, signal.SIGTERM):
@@ -166,10 +97,8 @@ async def serve(args: argparse.Namespace) -> None:
         await stopped.wait()
     finally:
         await peripheral.stop()
-        if maintenance_runtime is not None:
-            maintenance_runtime.close()
-        if reference_runtime is not None:
-            reference_runtime.close()
+        maintenance_runtime.close()
+        reference_runtime.close()
 
 
 def main(argv: Sequence[str] | None = None) -> int:

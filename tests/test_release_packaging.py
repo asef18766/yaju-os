@@ -16,6 +16,19 @@ PACKAGER = REPOSITORY_ROOT / "scripts" / "package_release.py"
 ATTACHMENT_ARCHIVE = "hitcon-legacy-dfu-attachment.zip"
 SERVICE_ARCHIVE = "hitcon-legacy-dfu-service.zip"
 SERVICE_DIRECTORY = "hitcon-legacy-dfu-service"
+RELEASE_RUNTIME_FILES = {
+    "src/hitcon_legacy_dfu/__init__.py",
+    "src/hitcon_legacy_dfu/board_runtime.py",
+    "src/hitcon_legacy_dfu/gatt_ids.py",
+    "src/hitcon_legacy_dfu/hardware.py",
+    "src/hitcon_legacy_dfu/maintenance_runtime.py",
+    "src/hitcon_legacy_dfu/nrf51_sdk11_runtime.py",
+    "src/hitcon_legacy_dfu/qiling_rootcanal.py",
+    "src/hitcon_legacy_dfu/qiling_runtime.py",
+    "src/hitcon_legacy_dfu/runner.py",
+    "src/hitcon_legacy_dfu/s130_gatt.py",
+    "src/hitcon_legacy_dfu/session_host.py",
+}
 
 
 def verify_embedded_manifest(
@@ -103,6 +116,14 @@ class ReleasePackagingTests(unittest.TestCase):
                 }
                 self.assertTrue(required.issubset(names))
                 self.assertEqual(
+                    {
+                        name
+                        for name in names
+                        if name.startswith("src/hitcon_legacy_dfu/")
+                    },
+                    RELEASE_RUNTIME_FILES,
+                )
+                self.assertEqual(
                     archive.read("artifacts/board_runtime/board_flash.bin"),
                     board_flash.read_bytes(),
                 )
@@ -158,7 +179,16 @@ class ReleasePackagingTests(unittest.TestCase):
                     f"{prefix}src/hitcon_legacy_dfu/session_host.py",
                 }
                 self.assertTrue(required.issubset(names))
+                self.assertEqual(
+                    {
+                        name.removeprefix(prefix)
+                        for name in names
+                        if name.startswith(f"{prefix}src/hitcon_legacy_dfu/")
+                    },
+                    RELEASE_RUNTIME_FILES,
+                )
                 self.assertNotIn(f"{prefix}scripts/package_release.py", names)
+                self.assertNotIn(f"{prefix}scripts/preview_inmu_king_art.py", names)
                 self.assertNotIn(f"{prefix}scripts/smoke_player_attachment.py", names)
                 for name in names:
                     path = PurePosixPath(name)

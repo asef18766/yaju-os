@@ -1,4 +1,7 @@
-"""nRF52-like addresses used by the emulated challenge board."""
+"""nRF51 memory-map constants used by the emulated challenge board."""
+
+NRF51_SRAM_BASE = 0x2000_0000
+NRF51_SRAM_SIZE = 0x0000_8000
 
 GPIO_P0_BASE = 0x5000_0000
 GPIO_P0_IN_OFFSET = 0x510

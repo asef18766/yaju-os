@@ -20,10 +20,7 @@ from contextlib import suppress
 import struct
 from typing import TYPE_CHECKING, Protocol
 
-from .bumble_adapter import BumbleUnavailable
-from .maintenance_runtime import FirmwareGattService, MaintenanceFirmwareRuntime
-from .nrf51_sdk11_runtime import Nrf51Sdk11BootloaderRuntime, Nrf51Sdk11RuntimeError
-from .protocol import (
+from .gatt_ids import (
     CONTROL_POINT_UUID,
     MAINTENANCE_CONTROL_UUID,
     MAINTENANCE_INFO_UUID,
@@ -33,6 +30,8 @@ from .protocol import (
     SERVICE_UUID,
     DfuOpcode,
 )
+from .maintenance_runtime import FirmwareGattService, MaintenanceFirmwareRuntime
+from .nrf51_sdk11_runtime import Nrf51Sdk11BootloaderRuntime, Nrf51Sdk11RuntimeError
 
 if TYPE_CHECKING:
     from bumble.device import Connection, Device
@@ -47,6 +46,10 @@ if TYPE_CHECKING:
 # matched to the retiring controller.  A board reset therefore includes a
 # short controller-detach interval before the replacement begins advertising.
 _CONTROLLER_REPLACEMENT_DELAY = 0.1
+
+
+class BumbleUnavailable(RuntimeError):
+    """The optional Bumble/Rootcanal transport dependencies are unavailable."""
 
 
 class ApplicationRuntime(Protocol):

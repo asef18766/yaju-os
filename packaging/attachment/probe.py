@@ -12,7 +12,7 @@ from bumble.device import Device, Peer
 from bumble.hci import Address
 from bumble.transport import open_transport
 
-from hitcon_legacy_dfu.protocol import INMU_KING_FRAME_UUID, INMU_KING_SERVICE_UUID
+from hitcon_legacy_dfu.gatt_ids import INMU_KING_FRAME_UUID, INMU_KING_SERVICE_UUID
 
 
 def parse_args() -> argparse.Namespace:

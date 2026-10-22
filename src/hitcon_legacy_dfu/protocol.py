@@ -7,40 +7,20 @@ from enum import Enum, IntEnum
 import struct
 
 from .crc import crc16_ccitt
-
-
-LEGACY_DFU_BASE_UUID = "0000xxxx-1212-efde-1523-785feabcd123"
-SERVICE_UUID = LEGACY_DFU_BASE_UUID.replace("xxxx", "1530")
-CONTROL_POINT_UUID = LEGACY_DFU_BASE_UUID.replace("xxxx", "1531")
-PACKET_UUID = LEGACY_DFU_BASE_UUID.replace("xxxx", "1532")
-STATUS_REPORT_UUID = LEGACY_DFU_BASE_UUID.replace("xxxx", "1533")
-REVISION_UUID = LEGACY_DFU_BASE_UUID.replace("xxxx", "1534")
-
-# The board starts in this ordinary vendor maintenance service.  It is not a
-# Nordic DFU UUID and does not advertise the legacy-DFU service until the
-# compiled application accepts its boot-mode request.
-MAINTENANCE_SERVICE_UUID = "5a1c0001-7c5d-4c8d-942c-a786c1d58b6d"
-MAINTENANCE_CONTROL_UUID = "5a1c0002-7c5d-4c8d-942c-a786c1d58b6d"
-MAINTENANCE_INFO_UUID = "5a1c0003-7c5d-4c8d-942c-a786c1d58b6d"
-
-# Public UUID contract registered by the compiled normal-application firmware
-# through S130. These constants are only for clients and consistency tests.
-INMU_KING_SERVICE_UUID = "5a1c1001-7c5d-4c8d-942c-a786c1d58b6d"
-INMU_KING_FRAME_UUID = "5a1c1002-7c5d-4c8d-942c-a786c1d58b6d"
-
-
-class DfuOpcode(IntEnum):
-    """Legacy BLE DFU control-point operations."""
-
-    START_DFU = 0x01
-    INITIALIZE_DFU_PARAMETERS = 0x02
-    RECEIVE_FIRMWARE_IMAGE = 0x03
-    VALIDATE_FIRMWARE = 0x04
-    ACTIVATE_AND_RESET = 0x05
-    SYSTEM_RESET = 0x06
-    PACKET_RECEIPT_NOTIFICATION_REQUEST = 0x08
-    RESPONSE_CODE = 0x10
-    PACKET_RECEIPT_NOTIFICATION = 0x11
+from .gatt_ids import (
+    CONTROL_POINT_UUID,
+    INMU_KING_FRAME_UUID,
+    INMU_KING_SERVICE_UUID,
+    LEGACY_DFU_BASE_UUID,
+    MAINTENANCE_CONTROL_UUID,
+    MAINTENANCE_INFO_UUID,
+    MAINTENANCE_SERVICE_UUID,
+    PACKET_UUID,
+    REVISION_UUID,
+    SERVICE_UUID,
+    STATUS_REPORT_UUID,
+    DfuOpcode,
+)
 
 
 class DfuImageType(IntEnum):

