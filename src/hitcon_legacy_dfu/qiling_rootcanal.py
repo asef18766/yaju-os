@@ -21,11 +21,9 @@ import struct
 from typing import TYPE_CHECKING, Protocol
 
 from .bumble_adapter import BumbleUnavailable
-from .maintenance_runtime import MaintenanceFirmwareRuntime
+from .maintenance_runtime import FirmwareGattService, MaintenanceFirmwareRuntime
 from .nrf51_sdk11_runtime import Nrf51Sdk11BootloaderRuntime, Nrf51Sdk11RuntimeError
 from .protocol import (
-    CONSOLE_OUTPUT_UUID,
-    CONSOLE_SERVICE_UUID,
     CONTROL_POINT_UUID,
     MAINTENANCE_CONTROL_UUID,
     MAINTENANCE_INFO_UUID,
@@ -42,6 +40,13 @@ if TYPE_CHECKING:
     from bumble.transport.common import Transport
 
     from .s130_gatt import S130GattServer
+
+
+# Rootcanal consumes an HCI TCP EOF on its own event loop.  Reopening the same
+# static random address before that EOF is processed can leave the central
+# matched to the retiring controller.  A board reset therefore includes a
+# short controller-detach interval before the replacement begins advertising.
+_CONTROLLER_REPLACEMENT_DELAY = 0.1
 
 
 class ApplicationRuntime(Protocol):
@@ -85,17 +90,17 @@ class Nrf51Sdk11BumblePeripheral:
         self.revision = revision
         self.device: Device | None = None
         self._transport: Transport | None = None
+        self._hci_transport: str | None = None
         self._connection: Connection | None = None
         self._control_point: Characteristic[bytes] | None = None
         self._packet: Characteristic[bytes] | None = None
-        self._console_output: Characteristic[bytes] | None = None
         self._write_lock: asyncio.Lock | None = None
         self._advertising_data: bytes | None = None
         self._scan_response_data: bytes | None = None
         self._application_reset_task: asyncio.Task[None] | None = None
         self._application_advertising_ready: asyncio.Event | None = None
         self._phase = "dfu"
-        self._console_bytes = b""
+        self._application_services: tuple[FirmwareGattService, ...] = ()
         self._application_fault: str | None = None
 
     @property
@@ -137,6 +142,10 @@ class Nrf51Sdk11BumblePeripheral:
         self._att_unlikely_error = att.ATT_UNLIKELY_ERROR_ERROR
         self._write_lock = asyncio.Lock()
         self._application_advertising_ready = asyncio.Event()
+        self._hci_transport = hci_transport
+        self._phase = "dfu"
+        self._application_services = ()
+        self._application_fault = None
         transport = await open_transport(hci_transport)
         try:
             device = Device.with_hci(
@@ -166,19 +175,12 @@ class Nrf51Sdk11BumblePeripheral:
                 Characteristic.READABLE,
                 struct.pack("<H", self.revision),
             )
-            console_output = Characteristic(
-                CONSOLE_OUTPUT_UUID,
-                Characteristic.Properties.READ | Characteristic.Properties.NOTIFY,
-                Characteristic.READABLE,
-                CharacteristicValue(read=self._read_console_output),
-            )
             control_point.on(Characteristic.EVENT_SUBSCRIPTION, self._on_control_point_subscription)
             # Put packet first to match the service construction order in the
             # official target.  External ATT handles need not equal the
             # SoftDevice handles: callbacks below map each GATT operation to
             # the actual handle allocated inside the ELF.
             device.add_service(Service(SERVICE_UUID, [packet, control_point, revision]))
-            device.add_service(Service(CONSOLE_SERVICE_UUID, [console_output]))
             device.on(device.EVENT_CONNECTION, self._on_connection)
 
             advertising_data = bytes(
@@ -202,7 +204,6 @@ class Nrf51Sdk11BumblePeripheral:
             self._transport = transport
             self._control_point = control_point
             self._packet = packet
-            self._console_output = console_output
             self._advertising_data = advertising_data
             self._scan_response_data = scan_response_data
             await device.power_on()
@@ -245,7 +246,7 @@ class Nrf51Sdk11BumblePeripheral:
         await self.stop()
 
     async def wait_for_application_advertising(self, timeout: float | None = None) -> None:
-        """Wait until activation reset has exposed the application console."""
+        """Wait until reset has exposed the uploaded firmware's GATT table."""
 
         ready = self._application_advertising_ready
         if ready is None:
@@ -259,7 +260,6 @@ class Nrf51Sdk11BumblePeripheral:
         self._connection = None
         self._control_point = None
         self._packet = None
-        self._console_output = None
         self._write_lock = None
         self._advertising_data = None
         self._scan_response_data = None
@@ -267,6 +267,7 @@ class Nrf51Sdk11BumblePeripheral:
         self._application_advertising_ready = None
         self.device = None
         self._transport = None
+        self._hci_transport = None
 
     def _on_connection(self, connection: Connection) -> None:
         if self._connection is not None and self._connection is not connection:
@@ -296,10 +297,8 @@ class Nrf51Sdk11BumblePeripheral:
         if self._connection is not connection:
             return
         self._connection = None
-        # Even after a successful activation the physical BLE disconnect is a
-        # real GAP event from the bootloader's perspective.  Keeping its host
-        # mirror in sync prevents a stale connection from accepting later
-        # DFU writes through the still-present challenge console GATT server.
+        # A successful activation still delivers a real GAP disconnect to the
+        # compiled bootloader before its controller is replaced.
         if self.bootloader_runtime.connected:
             with suppress(Exception):
                 self.bootloader_runtime.disconnect()
@@ -388,22 +387,43 @@ class Nrf51Sdk11BumblePeripheral:
             )
         except Exception as exc:
             self._application_fault = f"{type(exc).__name__}: {exc}"
-            self._console_bytes = b""
+            self._application_services = ()
             return
 
-        output = getattr(execution, "uart_output", b"")
-        self._console_bytes = bytes(output) if isinstance(output, (bytes, bytearray)) else b""
+        try:
+            services = getattr(execution, "gatt_services", ())
+            normalized = tuple(services) if services is not None else ()
+            self._validate_application_services(normalized)
+        except Exception as exc:
+            self._application_services = ()
+            self._application_fault = f"{type(exc).__name__}: {exc}"
+            return
+        self._application_services = normalized
         self._application_fault = getattr(execution, "fault", None)
-        await self._publish_console_output()
 
-    def _read_console_output(self, _connection: Connection) -> bytes:
-        return self._console_bytes
+    @staticmethod
+    def _validate_application_services(
+        services: tuple[FirmwareGattService, ...],
+    ) -> None:
+        from uuid import UUID
 
-    async def _publish_console_output(self) -> None:
-        device = self.device
-        console_output = self._console_output
-        if device is not None and console_output is not None and self._console_bytes:
-            await device.notify_subscribers(console_output, self._console_bytes)
+        for service in services:
+            UUID(service.uuid)
+            if not service.primary:
+                raise ValueError("uploaded firmware registered a secondary service")
+            for characteristic in service.characteristics:
+                UUID(characteristic.uuid)
+                if (
+                    characteristic.properties != 0x02
+                    or not characteristic.readable
+                    or characteristic.writable
+                    or characteristic.read_authorized
+                ):
+                    raise ValueError(
+                        "uploaded application GATT characteristics must be static read-only"
+                    )
+                if len(characteristic.initial_value) > characteristic.max_length:
+                    raise ValueError("uploaded characteristic exceeds its maximum length")
 
     async def _disconnect_and_restart(self, connection: Connection, application: bool) -> None:
         await asyncio.sleep(0)
@@ -412,23 +432,118 @@ class Nrf51Sdk11BumblePeripheral:
                 with suppress(Exception):
                     await connection.disconnect()
 
-            device = self.device
-            if (
-                device is not None
-                and self._advertising_data is not None
-                and self._scan_response_data is not None
-            ):
-                with suppress(Exception):
-                    await device.start_advertising(
-                        auto_restart=False,
-                        advertising_data=self._advertising_data,
-                        scan_response_data=self._scan_response_data,
-                    )
-                if application and self._application_advertising_ready is not None:
+            if application:
+                await self._replace_with_application_device()
+                if self._application_advertising_ready is not None:
                     self._application_advertising_ready.set()
+            else:
+                device = self.device
+                if (
+                    device is not None
+                    and self._advertising_data is not None
+                    and self._scan_response_data is not None
+                ):
+                    with suppress(Exception):
+                        await device.start_advertising(
+                            auto_restart=False,
+                            advertising_data=self._advertising_data,
+                            scan_response_data=self._scan_response_data,
+                        )
         finally:
             if self._application_reset_task is asyncio.current_task():
                 self._application_reset_task = None
+
+    async def _replace_with_application_device(self) -> None:
+        """Model reset by replacing the DFU controller and attribute table."""
+
+        try:
+            from bumble.core import AdvertisingData, UUID
+            from bumble.device import Device
+            from bumble.gatt import Characteristic, Service
+            from bumble.hci import Address
+            from bumble.transport import open_transport
+        except ModuleNotFoundError as exc:  # pragma: no cover - checked by start()
+            raise BumbleUnavailable(
+                "Bumble is optional; install the project with the 'transport' extra"
+            ) from exc
+
+        old_device = self.device
+        old_transport = self._transport
+        hci_transport = self._hci_transport
+        if hci_transport is None:
+            raise RuntimeError("peripheral has no HCI transport to reset")
+
+        self.device = None
+        self._transport = None
+        self._control_point = None
+        self._packet = None
+        self._advertising_data = None
+        self._scan_response_data = None
+        if old_device is not None:
+            with suppress(Exception):
+                await old_device.stop_advertising()
+            with suppress(Exception):
+                await old_device.power_off()
+        if old_transport is not None:
+            await old_transport.close()
+            await asyncio.sleep(_CONTROLLER_REPLACEMENT_DELAY)
+
+        transport = await open_transport(hci_transport)
+        try:
+            device = Device.with_hci(
+                self.name,
+                Address(self.address),
+                transport.source,
+                transport.sink,
+            )
+            installed_service_uuids: list[str] = []
+            for definition in self._application_services:
+                characteristics: list[Characteristic[bytes]] = []
+                for characteristic in definition.characteristics:
+                    characteristics.append(
+                        Characteristic(
+                            characteristic.uuid,
+                            Characteristic.Properties.READ,
+                            Characteristic.READABLE,
+                            characteristic.initial_value,
+                        )
+                    )
+                if characteristics:
+                    device.add_service(Service(definition.uuid, characteristics))
+                    installed_service_uuids.append(definition.uuid)
+            device.on(device.EVENT_CONNECTION, self._on_connection)
+
+            fields: list[tuple[int, bytes]] = [
+                (AdvertisingData.FLAGS, bytes((0x06,)))
+            ]
+            if installed_service_uuids:
+                fields.append(
+                    (
+                        AdvertisingData.INCOMPLETE_LIST_OF_128_BIT_SERVICE_CLASS_UUIDS,
+                        UUID(installed_service_uuids[0]).to_bytes(force_128=True),
+                    )
+                )
+            advertising_data = bytes(AdvertisingData(fields))
+            scan_response_data = bytes(
+                AdvertisingData(
+                    [(AdvertisingData.COMPLETE_LOCAL_NAME, self.name.encode("utf-8"))]
+                )
+            )
+            self.device = device
+            self._transport = transport
+            self._advertising_data = advertising_data
+            self._scan_response_data = scan_response_data
+            await device.power_on()
+            await device.start_advertising(
+                auto_restart=False,
+                advertising_data=advertising_data,
+                scan_response_data=scan_response_data,
+            )
+        except BaseException:
+            await transport.close()
+            self.device = None
+            self._transport = None
+            raise
 
 
 class MaintenanceApplicationBumblePeripheral:
@@ -786,6 +901,7 @@ class LayeredNrf51BumblePeripheral:
             if self._stopping:
                 return
             await self._maintenance.stop()
+            await asyncio.sleep(_CONTROLLER_REPLACEMENT_DELAY)
             if self._stopping:
                 return
             hci_transport = self._hci_transport

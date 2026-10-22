@@ -50,11 +50,11 @@ jobs:
             "${container_id}:/app/handout/maintenance_application.bin" \
             build/ci-handout/maintenance_application.bin
           docker cp \
-            "${container_id}:/app/artifacts/maintenance_application/maintenance_application.emulator.elf" \
-            build/ci-handout/maintenance_application.emulator.elf
+            "${container_id}:/app/artifacts/board_runtime/board_flash.bin" \
+            build/ci-handout/board_flash.bin
           docker cp \
-            "${container_id}:/app/artifacts/nrf51_sdk11_legacy_dfu/nrf51422_xxac.emulator.elf" \
-            build/ci-handout/nrf51422_xxac.emulator.elf
+            "${container_id}:/app/artifacts/board_runtime/runtime_symbols.json" \
+            build/ci-handout/runtime_symbols.json
           docker rm "${container_id}"
           trap - EXIT
 
@@ -63,8 +63,8 @@ jobs:
           source_date_epoch=$(git show -s --format=%ct HEAD)
           SOURCE_DATE_EPOCH="${source_date_epoch}" python3 scripts/package_release.py \
             --handout build/ci-handout/maintenance_application.bin \
-            --maintenance-firmware-elf build/ci-handout/maintenance_application.emulator.elf \
-            --reference-bootloader-elf build/ci-handout/nrf51422_xxac.emulator.elf \
+            --board-flash build/ci-handout/board_flash.bin \
+            --runtime-symbols build/ci-handout/runtime_symbols.json \
             --output-dir dist \
             --revision "${GITHUB_SHA}"
 
@@ -81,11 +81,11 @@ jobs:
             build/ci-handout/maintenance_application.bin \
             build/archive-smoke/attachment/maintenance_application.bin
           cmp \
-            build/ci-handout/maintenance_application.emulator.elf \
-            build/archive-smoke/attachment/artifacts/maintenance_application/maintenance_application.elf
+            build/ci-handout/board_flash.bin \
+            build/archive-smoke/attachment/artifacts/board_runtime/board_flash.bin
           cmp \
-            build/ci-handout/nrf51422_xxac.emulator.elf \
-            build/archive-smoke/attachment/artifacts/nrf51_sdk11_legacy_dfu/nrf51422_xxac.elf
+            build/ci-handout/runtime_symbols.json \
+            build/archive-smoke/attachment/artifacts/board_runtime/runtime_symbols.json
           (cd build/archive-smoke/attachment && sha256sum --check SHA256SUMS)
           (cd build/archive-smoke/service/hitcon-legacy-dfu-service && sha256sum --check SHA256SUMS)
           (cd dist && sha256sum --check SHA256SUMS)

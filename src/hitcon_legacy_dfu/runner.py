@@ -10,6 +10,7 @@ import signal
 from typing import Sequence
 
 from .bootloader import BootloaderConfig, LegacyDfuBootloader
+from .board_runtime import BoardRuntimeArtifact
 from .bridge import LegacyDfuGattBridge
 from .bumble_adapter import LegacyDfuBumblePeripheral
 from .maintenance_runtime import MaintenanceFirmwareRuntime
@@ -42,6 +43,14 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=5_000,
         help="maximum Cortex-M instructions per post-reset execution",
+    )
+    parser.add_argument(
+        "--board-runtime",
+        type=Path,
+        help=(
+            "directory containing one board_flash.bin and runtime_symbols.json; "
+            "selects both the maintenance and bootloader reset phases"
+        ),
     )
     parser.add_argument(
         "--reference-bootloader-elf",
@@ -78,12 +87,31 @@ async def serve(args: argparse.Namespace) -> None:
         sram_size=config.sram_size,
         instruction_budget=args.instruction_budget,
     )
+    if args.board_runtime is not None and (
+        args.reference_bootloader_elf is not None
+        or args.maintenance_firmware_elf is not None
+    ):
+        raise ValueError(
+            "--board-runtime cannot be combined with the legacy per-phase ELF options"
+        )
     if args.maintenance_firmware_elf is not None and args.reference_bootloader_elf is None:
         raise ValueError("--maintenance-firmware-elf requires --reference-bootloader-elf")
 
     reference_runtime = None
     maintenance_runtime = None
-    if args.reference_bootloader_elf is not None:
+    if args.board_runtime is not None:
+        # Validate once up front; both phase runtimes then load the exact same
+        # immutable flash image and select their reset entry from its metadata.
+        BoardRuntimeArtifact.load(args.board_runtime)
+        from .nrf51_sdk11_runtime import Nrf51Sdk11BootloaderRuntime
+
+        reference_runtime = Nrf51Sdk11BootloaderRuntime.from_board_runtime(
+            args.board_runtime
+        )
+        maintenance_runtime = MaintenanceFirmwareRuntime.from_board_runtime(
+            args.board_runtime
+        )
+    elif args.reference_bootloader_elf is not None:
         from .nrf51_sdk11_runtime import Nrf51Sdk11BootloaderRuntime
 
         reference_runtime = Nrf51Sdk11BootloaderRuntime(args.reference_bootloader_elf)

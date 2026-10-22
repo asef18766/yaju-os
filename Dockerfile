@@ -17,10 +17,17 @@ WORKDIR /build
 COPY scripts/fetch_nrf51_sdk11.sh ./scripts/fetch_nrf51_sdk11.sh
 COPY scripts/build_nrf51_sdk11_legacy_dfu.sh ./scripts/build_nrf51_sdk11_legacy_dfu.sh
 COPY scripts/build_maintenance_application.sh ./scripts/build_maintenance_application.sh
+COPY scripts/build_board_runtime.py ./scripts/build_board_runtime.py
 COPY firmware ./firmware
 RUN bash ./scripts/fetch_nrf51_sdk11.sh \
     && bash ./scripts/build_nrf51_sdk11_legacy_dfu.sh \
     && bash ./scripts/build_maintenance_application.sh \
+    && python3 ./scripts/build_board_runtime.py \
+        --maintenance-bin ./artifacts/maintenance_application/maintenance_application.bin \
+        --maintenance-elf ./artifacts/maintenance_application/maintenance_application.emulator.elf \
+        --bootloader-bin ./artifacts/nrf51_sdk11_legacy_dfu/nrf51422_xxac_flash.bin \
+        --bootloader-elf ./artifacts/nrf51_sdk11_legacy_dfu/nrf51422_xxac.emulator.elf \
+        --output-dir ./artifacts/board_runtime \
     && rm -rf vendor
 
 
@@ -31,8 +38,9 @@ FROM python:3.12-slim-trixie
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    HITCON_REFERENCE_BOOTLOADER_ELF=/app/artifacts/nrf51_sdk11_legacy_dfu/nrf51422_xxac.elf \
-    HITCON_MAINTENANCE_FIRMWARE_ELF=/app/artifacts/maintenance_application/maintenance_application.elf
+    HITCON_BOARD_RUNTIME=/app/artifacts/board_runtime \
+    HITCON_REFERENCE_BOOTLOADER_ELF=/app/artifacts/board_runtime/board_flash.bin \
+    HITCON_MAINTENANCE_FIRMWARE_ELF=/app/artifacts/board_runtime/board_flash.bin
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates git \
@@ -42,8 +50,7 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src ./src
 RUN python -m pip install '.[full]'
-COPY --from=bootloader-build /build/artifacts/nrf51_sdk11_legacy_dfu ./artifacts/nrf51_sdk11_legacy_dfu
-COPY --from=bootloader-build /build/artifacts/maintenance_application ./artifacts/maintenance_application
+COPY --from=bootloader-build /build/artifacts/board_runtime ./artifacts/board_runtime
 COPY --from=bootloader-build /build/artifacts/maintenance_application/maintenance_application.bin ./handout/maintenance_application.bin
 
 RUN useradd --create-home --uid 10001 ctf \
@@ -53,4 +60,4 @@ USER ctf
 EXPOSE 6402/tcp
 
 ENTRYPOINT ["hitcon-legacy-dfu-host"]
-CMD ["--secret-file", "/run/secrets/flag", "--listen-host", "0.0.0.0", "--listen-port", "6402", "--reference-bootloader-elf", "/app/artifacts/nrf51_sdk11_legacy_dfu/nrf51422_xxac.elf", "--maintenance-firmware-elf", "/app/artifacts/maintenance_application/maintenance_application.elf"]
+CMD ["--secret-file", "/run/secrets/flag", "--listen-host", "0.0.0.0", "--listen-port", "6402", "--board-runtime", "/app/artifacts/board_runtime"]

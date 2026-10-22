@@ -6,16 +6,21 @@ import unittest
 from hitcon_legacy_dfu.bootloader import BootloaderConfig, LegacyDfuBootloader
 from hitcon_legacy_dfu.bridge import LegacyDfuGattBridge
 from hitcon_legacy_dfu.client import LegacyDfuClient
-from hitcon_legacy_dfu.payloads import make_gpio_dump_payload, make_gpio_probe_payload
+from hitcon_legacy_dfu.payloads import (
+    TEST_APPLICATION_SERVICE_UUID,
+    TEST_APPLICATION_VALUE_UUID,
+    make_gpio_dump_payload,
+    make_gpio_probe_payload,
+)
 
 
 @unittest.skipUnless(importlib.util.find_spec("qiling") is not None, "optional Qiling dependency is not installed")
 class QilingRuntimeTests(unittest.TestCase):
-    def test_uploaded_thumb_payload_reads_gpio_and_writes_uart(self) -> None:
+    def test_uploaded_thumb_payload_reads_gpio_and_registers_gatt(self) -> None:
         from hitcon_legacy_dfu.qiling_runtime import QilingRuntime
 
         secret = b"CTF{legacy_dfu_gpio}"
-        runtime = QilingRuntime(secret, instruction_budget=5)
+        runtime = QilingRuntime(secret, instruction_budget=100)
         bootloader = LegacyDfuBootloader(runtime=runtime)
         client = LegacyDfuClient(LegacyDfuGattBridge(bootloader))
 
@@ -23,15 +28,21 @@ class QilingRuntimeTests(unittest.TestCase):
 
         self.assertIsNotNone(runtime.last_result)
         assert runtime.last_result is not None
-        self.assertEqual(runtime.last_result.uart_output, secret[:4])
+        self.assertEqual(runtime.last_result.svc_calls, (0x63, 0xA0, 0xA2))
+        service = runtime.last_result.gatt_services[0]
+        self.assertEqual(service.uuid, TEST_APPLICATION_SERVICE_UUID)
+        self.assertEqual(service.characteristics[0].uuid, TEST_APPLICATION_VALUE_UUID)
+        self.assertEqual(service.characteristics[0].initial_value, secret[:4])
+        self.assertTrue(service.characteristics[0].readable)
+        self.assertFalse(service.characteristics[0].writable)
         self.assertEqual(runtime.last_result.gpio_reads, 1)
         self.assertIsNone(runtime.last_result.fault)
 
-    def test_uploaded_thumb_payload_can_dump_multiple_gpio_words(self) -> None:
+    def test_uploaded_thumb_payload_can_publish_multiple_gpio_words(self) -> None:
         from hitcon_legacy_dfu.qiling_runtime import QilingRuntime
 
         secret = b"CTF{gpio_dump_read_32_bytes!!!!}"
-        runtime = QilingRuntime(secret, instruction_budget=32)
+        runtime = QilingRuntime(secret, instruction_budget=100)
         bootloader = LegacyDfuBootloader(runtime=runtime)
         client = LegacyDfuClient(LegacyDfuGattBridge(bootloader))
 
@@ -39,7 +50,10 @@ class QilingRuntimeTests(unittest.TestCase):
 
         self.assertIsNotNone(runtime.last_result)
         assert runtime.last_result is not None
-        self.assertEqual(runtime.last_result.uart_output, secret)
+        self.assertEqual(
+            runtime.last_result.gatt_services[0].characteristics[0].initial_value,
+            secret,
+        )
         self.assertEqual(runtime.last_result.gpio_reads, len(secret) // 4)
         self.assertIsNone(runtime.last_result.fault)
 
@@ -53,7 +67,7 @@ class QilingRuntimeTests(unittest.TestCase):
             flash_size=config.flash_size,
             sram_base=config.sram_base,
             sram_size=config.sram_size,
-            instruction_budget=32,
+            instruction_budget=100,
         )
         bootloader = LegacyDfuBootloader(config=config, runtime=runtime)
         client = LegacyDfuClient(LegacyDfuGattBridge(bootloader))
@@ -64,7 +78,10 @@ class QilingRuntimeTests(unittest.TestCase):
         self.assertEqual(bootloader.active_image, image)
         self.assertIsNotNone(runtime.last_result)
         assert runtime.last_result is not None
-        self.assertEqual(runtime.last_result.uart_output, secret)
+        self.assertEqual(
+            runtime.last_result.gatt_services[0].characteristics[0].initial_value,
+            secret,
+        )
         self.assertEqual(runtime.last_result.gpio_reads, len(secret) // 4)
         self.assertIsNone(runtime.last_result.fault)
 

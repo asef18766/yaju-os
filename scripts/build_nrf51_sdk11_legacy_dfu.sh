@@ -46,11 +46,11 @@ install -m 0644 "${build_dir}/${TARGET}.out" "${artifact_dir}/${TARGET}.elf"
 install -m 0644 "${build_dir}/${TARGET}.hex" "${artifact_dir}/${TARGET}.hex"
 install -m 0644 "${build_dir}/${TARGET}.map" "${artifact_dir}/${TARGET}.map"
 
-# Produce the small ELF used by the player-facing Qiling lab.  The compiled
-# bootloader adapter needs selected SDK state/function symbols plus the local
-# ``sd_*`` SVC wrappers, but it does not need the SDK's complete debug symbol
-# table.  Keeping only this runtime ABI reduces the attachment from hundreds
-# of KiB and avoids publishing unrelated build metadata.
+# Produce the small ELF used only while generating runtime_symbols.json for
+# the combined board image.  It is an internal build intermediate and is not
+# shipped in the player attachment.  The adapter needs selected SDK state /
+# function symbols plus the local ``sd_*`` SVC wrappers, not the complete
+# debug symbol table.
 keep_symbols=$(mktemp)
 trap 'rm -f -- "${keep_symbols}"' EXIT
 {
@@ -96,7 +96,7 @@ arm-none-eabi-size -A "${artifact_dir}/${TARGET}.elf" > "${artifact_dir}/size.tx
     printf 'compiler=%s\n' "$(arm-none-eabi-gcc --version | head -1)"
     printf 'flash_base=0x0003c000\n'
     printf 'flash_binary=%s_flash.bin\n' "${TARGET}"
-    printf 'player_emulator_elf=%s.emulator.elf\n' "${TARGET}"
+    printf 'board_runtime_metadata_input=%s.emulator.elf\n' "${TARGET}"
 } > "${artifact_dir}/BUILD_INFO"
 (
     cd "${artifact_dir}"

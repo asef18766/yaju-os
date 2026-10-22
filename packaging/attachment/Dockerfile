@@ -3,8 +3,9 @@ FROM python:3.12-slim-trixie
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    HITCON_REFERENCE_BOOTLOADER_ELF=/opt/hitcon/artifacts/nrf51_sdk11_legacy_dfu/nrf51422_xxac.elf \
-    HITCON_MAINTENANCE_FIRMWARE_ELF=/opt/hitcon/artifacts/maintenance_application/maintenance_application.elf
+    HITCON_BOARD_RUNTIME=/opt/hitcon/artifacts/board_runtime \
+    HITCON_REFERENCE_BOOTLOADER_ELF=/opt/hitcon/artifacts/board_runtime/board_flash.bin \
+    HITCON_MAINTENANCE_FIRMWARE_ELF=/opt/hitcon/artifacts/board_runtime/board_flash.bin
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates git \
@@ -24,4 +25,4 @@ USER player
 EXPOSE 6402/tcp
 
 ENTRYPOINT ["hitcon-legacy-dfu-host"]
-CMD ["--secret-file", "/run/secrets/local_flag", "--listen-host", "0.0.0.0", "--listen-port", "6402", "--max-sessions", "2"]
+CMD ["--secret-file", "/run/secrets/local_flag", "--listen-host", "0.0.0.0", "--listen-port", "6402", "--max-sessions", "2", "--board-runtime", "/opt/hitcon/artifacts/board_runtime"]

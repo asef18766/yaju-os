@@ -19,6 +19,13 @@ import threading
 from typing import Any
 from uuid import UUID
 
+from .board_runtime import (
+    BOARD_FLASH_FILENAME,
+    BOARD_METADATA_FILENAME,
+    BoardRuntimeArtifact,
+    BoardRuntimeArtifactError,
+)
+
 
 NRF_SUCCESS = 0
 NRF_ERROR_INVALID_PARAM = 7
@@ -150,7 +157,19 @@ class MaintenanceFirmwareRuntime:
     def __init__(self, elf_path: Path, *, instruction_budget: int = 5_000) -> None:
         if instruction_budget <= 0:
             raise ValueError("instruction_budget must be positive")
-        self.elf_path = Path(elf_path).resolve()
+        requested_path = Path(elf_path).resolve()
+        self._board_artifact: BoardRuntimeArtifact | None = None
+        if requested_path.is_dir() or requested_path.name in {
+            BOARD_FLASH_FILENAME,
+            BOARD_METADATA_FILENAME,
+        }:
+            try:
+                self._board_artifact = BoardRuntimeArtifact.load(requested_path)
+            except BoardRuntimeArtifactError as exc:
+                raise MaintenanceFirmwareArtifactError(str(exc)) from exc
+            self.elf_path = self._board_artifact.flash_path
+        else:
+            self.elf_path = requested_path
         self.instruction_budget = instruction_budget
         self._ql: Any | None = None
         self._bootstrap: tempfile._TemporaryFileWrapper[bytes] | None = None
@@ -183,6 +202,14 @@ class MaintenanceFirmwareRuntime:
             / "maintenance_application"
             / "maintenance_application.elf"
         )
+
+    @classmethod
+    def from_board_runtime(
+        cls, path: str | Path, *, instruction_budget: int = 5_000
+    ) -> "MaintenanceFirmwareRuntime":
+        """Create the application phase from one combined board artifact."""
+
+        return cls(Path(path), instruction_budget=instruction_budget)
 
     def __enter__(self) -> "MaintenanceFirmwareRuntime":
         return self
@@ -331,24 +358,36 @@ class MaintenanceFirmwareRuntime:
                 f"maintenance firmware ELF does not exist: {self.elf_path}"
             )
         try:
-            from elftools.elf.elffile import ELFFile
             from qiling import Qiling
             from qiling.const import QL_ARCH, QL_OS, QL_VERBOSE
         except ModuleNotFoundError as exc:
             raise MaintenanceFirmwareArtifactError(
-                "Qiling and pyelftools are required; install the 'emulator' extra"
+                "Qiling is required; install the 'emulator' extra"
             ) from exc
 
-        with self.elf_path.open("rb") as stream:
-            elf = ELFFile(stream)
-            self._symbols = self._read_symbols(elf)
-            entry_point = int(elf.header["e_entry"])
-            segments = [
-                (int(segment["p_paddr"]), segment.data())
-                for segment in elf.iter_segments()
-                if segment["p_type"] == "PT_LOAD" and segment["p_filesz"]
-            ]
-            self._svc_addresses = self._find_svc_instructions(elf)
+        if self._board_artifact is not None:
+            phase = self._board_artifact.phase("maintenance")
+            self._symbols = dict(phase.symbols)
+            entry_point = phase.entry_point
+            segments = [(0, self._board_artifact.flash)]
+            self._svc_addresses = dict(phase.svc_addresses)
+        else:
+            try:
+                from elftools.elf.elffile import ELFFile
+            except ModuleNotFoundError as exc:
+                raise MaintenanceFirmwareArtifactError(
+                    "pyelftools is required to load a legacy ELF artifact"
+                ) from exc
+            with self.elf_path.open("rb") as stream:
+                elf = ELFFile(stream)
+                self._symbols = self._read_symbols(elf)
+                entry_point = int(elf.header["e_entry"])
+                segments = [
+                    (int(segment["p_paddr"]), segment.data())
+                    for segment in elf.iter_segments()
+                    if segment["p_type"] == "PT_LOAD" and segment["p_filesz"]
+                ]
+                self._svc_addresses = self._find_svc_instructions(elf)
 
         command_handler = self._symbol("maintenance_command")
         for symbol in ("Reset_Handler", "application_init", "application_ble_evt"):

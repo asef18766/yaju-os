@@ -1,8 +1,8 @@
 # Nordic legacy DFU CTF target
 
 這題的唯一安全問題是 Nordic **legacy BLE DFU 不驗證 application firmware signature**。
-參賽者最後可刷入自己的 Thumb firmware，從 GPIO 讀 flag，再用 UART 輸出；沒有 parser bug、
-memory corruption 或 Web 題。
+參賽者最後可刷入自己的 Thumb firmware，從 GPIO 讀 flag，再由該 firmware 自己建立唯讀 GATT
+service 取回；沒有 parser bug、memory corruption、UART console 或 Web 題。
 
 ## 參賽者流程
 
@@ -12,7 +12,8 @@ application，找出它接受的 maintenance-mode request，對 control characte
 reset。
 
 重新連線後才會出現 Nordic legacy DFU service (`1530`)。此時無簽章的 legacy DFU 才是題目的
-漏洞：刷入自己的 application、讀 `P0.IN`，並經 `UART0.TXD` 取回 flag。
+漏洞：刷入自己的 application、讀 `P0.IN`，並透過 S130 ABI 註冊自己的唯讀 GATT
+characteristic 取回 flag。
 
 ```mermaid
 flowchart TD
@@ -22,7 +23,8 @@ flowchart TD
     Initial -->|"firmware-approved reset"| Dfu["Nordic legacy DFU GATT"]
     Dfu -->|"unsigned application"| Payload["player Thumb firmware"]
     Payload -->|"P0.IN"| Flag["host-only flag"]
-    Payload -->|"UART0.TXD"| Console["BLE console"]
+    Payload -->|"S130 GATTS SVC"| Result["payload-defined read-only GATT"]
+    Result --> Rootcanal
 ```
 
 每一條 player HCI/H4 TCP connection 都有自己的一組 Rootcanal、Qiling target 與 flag instance；
@@ -30,16 +32,20 @@ player 斷線後，這組 instance 會一起結束。
 
 ## 實作邊界
 
-- `maintenance_application.elf` 是真正編譯的 nRF51 Thumb firmware，載入 Qiling 後由其
+- `maintenance_application.bin` 是真正編譯的 nRF51 Thumb firmware，載入 Qiling 後由其
   `maintenance_command()` 驗證 GATT request，並寫入 `POWER.GPREGRET = 0xb1`。
-- `maintenance_application.elf` 透過真正的 S130 ABI 呼叫 `sd_ble_uuid_vs_add()`、
+- maintenance application 透過真正的 S130 ABI 呼叫 `sd_ble_uuid_vs_add()`、
   `sd_ble_gatts_service_add()` 與 `sd_ble_gatts_characteristic_add()` 建立動畫 GATT service；
   `BLE_GATTS_EVT_RW_AUTHORIZE_REQUEST` 的處理與 `sd_ble_gatts_rw_authorize_reply()` 也都在 Thumb
   firmware。UUID、frame table、timeline 與 cursor 同樣在該 image。
-- 成功後 Bumble 關閉 normal target controller、以相同 BLE address 開新的 controller，才啟動
-  Qiling 裡官方 SDK 11 legacy bootloader ELF。
+- runtime 使用同一份 256 KiB `board_flash.bin`；application 位於 `0x1b000`、官方 SDK 11 legacy
+  bootloader 位於 `0x3c000`。成功後 Bumble 模擬 reset，以相同 BLE address 依 GPREGRET 選擇
+  bootloader phase，而不是換用另一包 firmware artifact。
 - DFU GATT write 會進入編譯好的 Nordic code。DFU callback、CRC、flash staging 與 dual-bank
   activation 都不是 Python state machine。
+- activate/reset 會銷毀 bootloader controller 與整張 DFU attribute table，再用相同 BLE address
+  建立 application controller。新 GATT database 只來自 uploaded firmware 執行的 S130 service／
+  characteristic registration；host 沒有預製 output service，也不擷取 UART。
 
 這不是完整的 S130 radio emulation：Rootcanal/Bumble 管 HCI/ATT，狹窄的 Qiling shim 把 firmware
 發出的通用 S130 GATTS 註冊映射成 attribute table，並提供 normal application／bootloader 所需的
@@ -92,7 +98,10 @@ hex bytes，需解碼 ASCII 才會看到圖。Compose 的 `6402/tcp` 是 HCI/H4�
 - application base：`0x1b000`；bootloader base：`0x3c000`。
 - legacy DFU 只接受 application image，最大 `0x10800` bytes、4-byte aligned。
 - Flag 不在 guest flash、SRAM 或 filesystem；payload 必須讀取 `P0.IN` (`0x50000510`)。
-- payload 可寫 `UART0.TXD` (`0x4000251c`)；activate/reset 後重新連線讀 console characteristic。
+- uploaded payload 可用的輸出路徑只有 S130 GATT：目前 shim 支援
+  `sd_ble_uuid_vs_add` (`svc 0x63`)、`sd_ble_gatts_service_add` (`svc 0xa0`) 與
+  `sd_ble_gatts_characteristic_add` (`svc 0xa2`)。輸出 characteristic 必須是 READ-only；
+  activate/reset 後由同一條 Rootcanal HCI session 重新連線並 discovery/read。
 
 ## Docker Compose
 
@@ -111,7 +120,7 @@ docker compose cp host:/app/handout/maintenance_application.bin ./maintenance_ap
 ```
 
 正式 attachment 除了這個 `.bin`，也包含可在本機啟動相同 Rootcanal + Qiling target 的 Docker
-Compose lab、player-safe Python harness、symbol-pruned runtime ELF、固定的 local test flag 與一支無害
+Compose lab、player-safe Python harness、單一完整 board flash 與 narrow runtime metadata、固定的 local test flag 與一支無害
 GATT probe。`firmware/maintenance_application.c` 仍只存在出題端 source／service bundle，不會放進
 player attachment；已知 maintenance command 與範例 exploit payload 也不會被打包。
 
@@ -122,6 +131,12 @@ sudo apt-get install gcc-arm-none-eabi libnewlib-arm-none-eabi
 ./scripts/fetch_nrf51_sdk11.sh
 ./scripts/build_nrf51_sdk11_legacy_dfu.sh
 ./scripts/build_maintenance_application.sh
+python3 scripts/build_board_runtime.py \
+  --maintenance-bin artifacts/maintenance_application/maintenance_application.bin \
+  --maintenance-elf artifacts/maintenance_application/maintenance_application.emulator.elf \
+  --bootloader-bin artifacts/nrf51_sdk11_legacy_dfu/nrf51422_xxac_flash.bin \
+  --bootloader-elf artifacts/nrf51_sdk11_legacy_dfu/nrf51422_xxac.emulator.elf \
+  --output-dir artifacts/board_runtime
 python3 -m pip install -e '.[full]'
 ```
 
@@ -139,12 +154,11 @@ python3 -m rootcanal \
 hitcon-legacy-dfu \
   --secret-file /run/secrets/team-01.flag \
   --hci-transport tcp-client:127.0.0.1:6402 \
-  --reference-bootloader-elf artifacts/nrf51_sdk11_legacy_dfu/nrf51422_xxac.elf \
-  --maintenance-firmware-elf artifacts/maintenance_application/maintenance_application.elf
+  --board-runtime artifacts/board_runtime
 ```
 
-`--maintenance-firmware-elf` 不帶時保留直接進 DFU 的開發模式；Compose session host 固定使用
-兩階段模式。
+舊的 per-phase ELF flags 僅保留給 runtime 開發測試；Compose 與 release attachment 固定使用同一包
+`board_runtime` 走完整兩階段模式。
 
 ## 測試
 
@@ -153,7 +167,8 @@ PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
 完整環境會驗證：normal service 不可發現 DFU、reversed maintenance request 會造成 reset、DFU
-才在重連後出現，以及 Bumble/Rootcanal/Qiling 的完整 DFU→GPIO→console 路徑。動畫測試涵蓋
+才在重連後出現，以及 Bumble/Rootcanal/Qiling 的完整
+DFU→GPIO→payload-defined GATT 路徑；測試也確認 application reset 後 DFU service 已消失。動畫測試涵蓋
 MTU 23 的完整循環、不同 MTU／分段邊界、offset 重試、唯讀限制與重連歸零，逐 byte 比對
 firmware 的 S130 registration／read-authorize event 和離線 preview，並驗證 DFU 階段不再有動畫
 service。
@@ -164,7 +179,8 @@ GitHub Actions 會使用專案的 Dockerfile 建置正式映像、執行完整�
 artifact，其中固定包含：
 
 - `hitcon-legacy-dfu-attachment.zip`：給參賽者的
-  `maintenance_application.bin`、Rootcanal/Qiling emulator harness、symbol-pruned runtime ELF、Docker
+  `maintenance_application.bin`、Rootcanal/Qiling emulator harness、單一 `board_flash.bin`、
+  `runtime_symbols.json`、Docker
   Compose local lab、公開 local test flag、GATT probe、build metadata 與 SHA-256 manifest；不含
   firmware source、organizer tests、已知 maintenance command 或 solution payload generator。
 - `hitcon-legacy-dfu-service.zip`：可直接部署的 Docker Compose build context、部署說明與
@@ -174,8 +190,9 @@ artifact，其中固定包含：
 CI 會解開兩個 ZIP：service bundle 會執行 `docker compose config` 並從解開後的內容重新 build；
 player attachment 也會從解開後的內容 build、啟動 session host，再由另一個 container 經過公開
 HCI/H4 port 做一次真實 BLE GATT read；最後用不會打包的 organizer smoke client 完整走過
-maintenance reset、unsigned DFU、Thumb GPIO/UART payload 與 console flag read，確認本機 lab 真的能
-測 exploit。每次 push、pull request 與手動 dispatch 都會執行；成功後可在該 workflow run 的
+maintenance reset、unsigned DFU、Thumb GPIO/S130 payload 與自建 characteristic flag read，確認
+從頭到尾唯一的 client I/O 都走公開的 Rootcanal HCI socket。每次 push、pull request 與手動 dispatch
+都會執行；成功後可在該 workflow run 的
 Artifacts 區下載。
 
 推送 `v*` tag 時，CI 還會在 GitHub Releases 建立對應版本，並把上述兩個 ZIP 與
@@ -188,7 +205,7 @@ Artifacts 區下載。
 SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)" \
 python3 scripts/package_release.py \
   --handout artifacts/maintenance_application/maintenance_application.bin \
-  --maintenance-firmware-elf artifacts/maintenance_application/maintenance_application.emulator.elf \
-  --reference-bootloader-elf artifacts/nrf51_sdk11_legacy_dfu/nrf51422_xxac.emulator.elf \
+  --board-flash artifacts/board_runtime/board_flash.bin \
+  --runtime-symbols artifacts/board_runtime/runtime_symbols.json \
   --revision "$(git rev-parse HEAD)"
 ```

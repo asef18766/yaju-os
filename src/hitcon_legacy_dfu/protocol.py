@@ -16,12 +16,6 @@ PACKET_UUID = LEGACY_DFU_BASE_UUID.replace("xxxx", "1532")
 STATUS_REPORT_UUID = LEGACY_DFU_BASE_UUID.replace("xxxx", "1533")
 REVISION_UUID = LEGACY_DFU_BASE_UUID.replace("xxxx", "1534")
 
-# This service is not part of the weakness.  It is the challenge board's
-# observable UART wire: firmware uploaded through legacy DFU can transmit its
-# result by writing nRF UART0.TXD, and the player can read it after reset.
-CONSOLE_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
-CONSOLE_OUTPUT_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
-
 # The board starts in this ordinary vendor maintenance service.  It is not a
 # Nordic DFU UUID and does not advertise the legacy-DFU service until the
 # compiled application accepts its boot-mode request.

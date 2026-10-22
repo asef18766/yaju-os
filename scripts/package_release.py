@@ -36,6 +36,7 @@ ATTACHMENT_STATIC_FILES = (
 # offline animation frames are deliberately absent from the player bundle.
 ATTACHMENT_RUNTIME_FILES = (
     "src/hitcon_legacy_dfu/__init__.py",
+    "src/hitcon_legacy_dfu/board_runtime.py",
     "src/hitcon_legacy_dfu/bootloader.py",
     "src/hitcon_legacy_dfu/bridge.py",
     "src/hitcon_legacy_dfu/bumble_adapter.py",
@@ -62,10 +63,12 @@ SERVICE_FILES = (
     "firmware/maintenance_application.c",
     "firmware/maintenance_application.ld",
     "scripts/build_maintenance_application.sh",
+    "scripts/build_board_runtime.py",
     "scripts/build_nrf51_sdk11_legacy_dfu.sh",
     "scripts/fetch_nrf51_sdk11.sh",
     "scripts/preview_inmu_king_art.py",
     "src/hitcon_legacy_dfu/__init__.py",
+    "src/hitcon_legacy_dfu/board_runtime.py",
     "src/hitcon_legacy_dfu/bootloader.py",
     "src/hitcon_legacy_dfu/bridge.py",
     "src/hitcon_legacy_dfu/bumble_adapter.py",
@@ -102,16 +105,16 @@ def parse_args() -> argparse.Namespace:
         help="compiled maintenance_application.bin produced by the firmware build",
     )
     parser.add_argument(
-        "--reference-bootloader-elf",
+        "--board-flash",
         type=Path,
         required=True,
-        help="symbol-pruned Nordic SDK 11 bootloader ELF for the player emulator",
+        help="combined 256 KiB nRF51 board_flash.bin",
     )
     parser.add_argument(
-        "--maintenance-firmware-elf",
+        "--runtime-symbols",
         type=Path,
         required=True,
-        help="symbol-pruned normal-application ELF for the player emulator",
+        help="runtime_symbols.json paired with the combined board image",
     )
     parser.add_argument(
         "--output-dir",
@@ -179,13 +182,13 @@ def checksum_manifest(entries: dict[str, ArchiveEntry]) -> bytes:
 
 def attachment_entries(
     handout: Path,
-    reference_bootloader_elf: Path,
-    maintenance_firmware_elf: Path,
+    board_flash: Path,
+    runtime_symbols: Path,
     revision: str,
 ) -> dict[str, ArchiveEntry]:
     firmware = read_artifact(handout, "handout firmware")
-    bootloader = read_artifact(reference_bootloader_elf, "reference bootloader ELF")
-    maintenance = read_artifact(maintenance_firmware_elf, "maintenance firmware ELF")
+    board = read_artifact(board_flash, "combined board flash")
+    symbols = read_artifact(runtime_symbols, "board runtime symbols")
     entries = {
         archive_path: read_source(source_path)
         for source_path, archive_path in ATTACHMENT_STATIC_FILES
@@ -200,15 +203,15 @@ def attachment_entries(
                     "target=nrf51422_xxac\n"
                     "application_base=0x0001b000\n"
                     f"firmware_sha256={hashlib.sha256(firmware.data).hexdigest()}\n"
-                    "maintenance_emulator_elf_sha256="
-                    f"{hashlib.sha256(maintenance.data).hexdigest()}\n"
-                    "bootloader_emulator_elf_sha256="
-                    f"{hashlib.sha256(bootloader.data).hexdigest()}\n"
+                    "board_flash_sha256="
+                    f"{hashlib.sha256(board.data).hexdigest()}\n"
+                    "runtime_symbols_sha256="
+                    f"{hashlib.sha256(symbols.data).hexdigest()}\n"
                 ).encode("ascii")
             ),
             "maintenance_application.bin": firmware,
-            "artifacts/maintenance_application/maintenance_application.elf": maintenance,
-            "artifacts/nrf51_sdk11_legacy_dfu/nrf51422_xxac.elf": bootloader,
+            "artifacts/board_runtime/board_flash.bin": board,
+            "artifacts/board_runtime/runtime_symbols.json": symbols,
         }
     )
     entries["SHA256SUMS"] = ArchiveEntry(checksum_manifest(entries))
@@ -251,8 +254,8 @@ def write_zip(
 
 def package(
     handout: Path,
-    reference_bootloader_elf: Path,
-    maintenance_firmware_elf: Path,
+    board_flash: Path,
+    runtime_symbols: Path,
     output_dir: Path,
     revision: str,
 ) -> tuple[Path, Path, Path]:
@@ -266,8 +269,8 @@ def package(
         attachment_path,
         attachment_entries(
             handout,
-            reference_bootloader_elf,
-            maintenance_firmware_elf,
+            board_flash,
+            runtime_symbols,
             revision,
         ),
         timestamp,
@@ -296,8 +299,8 @@ def main() -> int:
     try:
         outputs = package(
             args.handout,
-            args.reference_bootloader_elf,
-            args.maintenance_firmware_elf,
+            args.board_flash,
+            args.runtime_symbols,
             args.output_dir,
             args.revision,
         )

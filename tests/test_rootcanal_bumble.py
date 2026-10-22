@@ -16,10 +16,13 @@ from hitcon_legacy_dfu.bridge import LegacyDfuGattBridge
 from hitcon_legacy_dfu.bumble_adapter import LegacyDfuBumblePeripheral
 from hitcon_legacy_dfu.inmu_king_art import INMU_KING_DANCE_FRAMES
 from hitcon_legacy_dfu.maintenance_runtime import MaintenanceFirmwareRuntime
-from hitcon_legacy_dfu.payloads import make_gpio_dump_payload, make_gpio_probe_payload
+from hitcon_legacy_dfu.payloads import (
+    TEST_APPLICATION_SERVICE_UUID,
+    TEST_APPLICATION_VALUE_UUID,
+    make_gpio_dump_payload,
+    make_gpio_probe_payload,
+)
 from hitcon_legacy_dfu.protocol import (
-    CONSOLE_OUTPUT_UUID,
-    CONSOLE_SERVICE_UUID,
     CONTROL_POINT_UUID,
     INMU_KING_FRAME_UUID,
     INMU_KING_SERVICE_UUID,
@@ -113,7 +116,7 @@ class RootcanalBumbleIntegrationTests(unittest.IsolatedAsyncioTestCase):
             flash_size=config.flash_size,
             sram_base=config.sram_base,
             sram_size=config.sram_size,
-            instruction_budget=32,
+            instruction_budget=100,
         )
         with Nrf51Sdk11BootloaderRuntime(reference_elf) as reference_runtime:
             bootloader = await self._upload_image_over_rootcanal(
@@ -121,13 +124,15 @@ class RootcanalBumbleIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 runtime,
                 config=config,
                 validation_backend=reference_runtime,
-                expected_console_output=secret,
             )
 
         self.assertEqual(bootloader.active_image, image)
         self.assertIsNotNone(runtime.last_result)
         assert runtime.last_result is not None
-        self.assertEqual(runtime.last_result.uart_output, secret)
+        self.assertEqual(
+            runtime.last_result.gatt_services[0].characteristics[0].initial_value,
+            secret,
+        )
         self.assertEqual(runtime.last_result.gpio_reads, len(secret) // 4)
         self.assertIsNone(runtime.last_result.fault)
 
@@ -152,7 +157,7 @@ class RootcanalBumbleIntegrationTests(unittest.IsolatedAsyncioTestCase):
             flash_size=config.flash_size,
             sram_base=config.sram_base,
             sram_size=config.sram_size,
-            instruction_budget=32,
+            instruction_budget=100,
         )
         with Nrf51Sdk11BootloaderRuntime(reference_elf) as compiled_runtime:
             result = await self._upload_image_over_rootcanal(
@@ -160,14 +165,17 @@ class RootcanalBumbleIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 runtime,
                 config=config,
                 compiled_bootloader_runtime=compiled_runtime,
-                expected_console_output=secret,
+                expected_application_value=secret,
             )
             self.assertIs(result, compiled_runtime)
             self.assertEqual(compiled_runtime.activated_image, image)
 
         self.assertIsNotNone(runtime.last_result)
         assert runtime.last_result is not None
-        self.assertEqual(runtime.last_result.uart_output, secret)
+        self.assertEqual(
+            runtime.last_result.gatt_services[0].characteristics[0].initial_value,
+            secret,
+        )
         self.assertEqual(runtime.last_result.gpio_reads, len(secret) // 4)
         self.assertIsNone(runtime.last_result.fault)
 
@@ -324,10 +332,11 @@ class RootcanalBumbleIntegrationTests(unittest.IsolatedAsyncioTestCase):
         config: BootloaderConfig | None = None,
         validation_backend: object | None = None,
         compiled_bootloader_runtime: object | None = None,
-        expected_console_output: bytes | None = None,
+        expected_application_value: bytes | None = None,
     ) -> object:
         from bumble.core import UUID
         from bumble.device import Device, Peer
+        from bumble.gatt import Characteristic
         from bumble.hci import Address
         from bumble.transport import open_transport
         from rootcanal.binaries import get_package_binary_resource_path
@@ -501,24 +510,42 @@ class RootcanalBumbleIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 await asyncio.wait_for(disconnected.wait(), timeout=5)
                 await peripheral.wait_for_application_advertising(timeout=5)
 
-                if expected_console_output is not None:
+                if expected_application_value is not None:
                     assert peripheral.device is not None
                     application_connection = await self._connect_after_reset(
                         client,
                         peripheral.device.random_address,
                     )
                     application_peer = Peer(application_connection)
-                    console_services = await application_peer.discover_service(UUID(CONSOLE_SERVICE_UUID))
-                    self.assertEqual(len(console_services), 1)
-                    console_service = console_services[0]
-                    await application_peer.discover_characteristics(service=console_service)
-                    console_output = application_peer.get_characteristics_by_uuid(
-                        UUID(CONSOLE_OUTPUT_UUID),
-                        console_service,
+                    self.assertEqual(
+                        await application_peer.discover_service(UUID(SERVICE_UUID)),
+                        [],
+                    )
+                    self.assertEqual(
+                        await application_peer.discover_service(
+                            UUID("6e400001-b5a3-f393-e0a9-e50e24dcca9e")
+                        ),
+                        [],
+                    )
+                    application_services = await application_peer.discover_service(
+                        UUID(TEST_APPLICATION_SERVICE_UUID)
+                    )
+                    self.assertEqual(len(application_services), 1)
+                    application_service = application_services[0]
+                    await application_peer.discover_characteristics(
+                        service=application_service
+                    )
+                    application_value = application_peer.get_characteristics_by_uuid(
+                        UUID(TEST_APPLICATION_VALUE_UUID),
+                        application_service,
                     )[0]
                     self.assertEqual(
-                        await application_peer.read_value(console_output),
-                        expected_console_output,
+                        application_value.properties,
+                        Characteristic.Properties.READ,
+                    )
+                    self.assertEqual(
+                        await application_peer.read_value(application_value),
+                        expected_application_value,
                     )
                 return bootloader
             finally:

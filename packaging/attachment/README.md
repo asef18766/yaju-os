@@ -35,7 +35,10 @@ CTF{local_emulator_test_flag}
 The target address is `F6:F7:F8:F9:FA:FB`.  Every HCI connection to the host
 gets a new isolated Rootcanal/Qiling target.  Keep one HCI connection open for
 the complete normal-application -> maintenance reset -> DFU -> uploaded
-application -> console flow; closing it destroys that local target.
+application -> payload-defined GATT flow; closing it destroys that local
+target. There is no UART or host-provided BLE console: your uploaded firmware
+must register any result characteristic itself, and every client operation
+goes through this Rootcanal HCI connection.
 
 Run the harmless GATT probe included in `workspace/`:
 
@@ -71,7 +74,10 @@ docker compose down
 
 - `maintenance_application.bin` is the raw Cortex-M0 application firmware,
   linked at `0x0001b000`, that is intended for reverse engineering.
-- `artifacts/` contains symbol-pruned ELF files required by the Qiling target.
+- `artifacts/board_runtime/board_flash.bin` is one complete 256 KiB nRF51
+  flash image containing both the normal application and legacy bootloader.
+- `artifacts/board_runtime/runtime_symbols.json` contains only the narrow
+  entry-point/SVC ABI metadata Qiling needs to execute that raw image.
 - `src/` is the player-safe emulator/transport harness.
 - `workspace/` is bind-mounted into the tools container for your scripts.
 - `local_flag.txt` is the non-secret flag exposed by the local GPIO model.

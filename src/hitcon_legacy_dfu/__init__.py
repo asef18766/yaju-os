@@ -1,5 +1,6 @@
 """Nordic legacy DFU challenge primitives."""
 
+from .board_runtime import BoardRuntimeArtifact, BoardRuntimePhase
 from .bootloader import BootloaderConfig, LegacyDfuBootloader
 from .bridge import LegacyDfuGattBridge
 from .client import LegacyDfuClient
@@ -17,8 +18,6 @@ from .maintenance_runtime import (
 from .qiling_rootcanal import LayeredNrf51BumblePeripheral, Nrf51Sdk11BumblePeripheral
 from .session_host import LegacyDfuSessionHost, SessionHostConfig
 from .protocol import (
-    CONSOLE_OUTPUT_UUID,
-    CONSOLE_SERVICE_UUID,
     CONTROL_POINT_UUID,
     INMU_KING_FRAME_UUID,
     INMU_KING_SERVICE_UUID,
@@ -35,9 +34,9 @@ from .protocol import (
 )
 
 __all__ = [
+    "BoardRuntimeArtifact",
+    "BoardRuntimePhase",
     "BootloaderConfig",
-    "CONSOLE_OUTPUT_UUID",
-    "CONSOLE_SERVICE_UUID",
     "CONTROL_POINT_UUID",
     "DfuImageType",
     "DfuOpcode",

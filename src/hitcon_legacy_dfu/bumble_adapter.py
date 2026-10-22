@@ -18,8 +18,6 @@ from typing import TYPE_CHECKING
 
 from .bridge import GattStateError, LegacyDfuGattBridge
 from .protocol import (
-    CONSOLE_OUTPUT_UUID,
-    CONSOLE_SERVICE_UUID,
     CONTROL_POINT_UUID,
     PACKET_UUID,
     REVISION_UUID,
@@ -76,7 +74,6 @@ class LegacyDfuBumblePeripheral:
         self._control_point: Characteristic[bytes] | None = None
         self._packet: Characteristic[bytes] | None = None
         self._status_report: Characteristic[bytes] | None = None
-        self._console_output: Characteristic[bytes] | None = None
         self._write_lock: asyncio.Lock | None = None
         self._advertising_data: bytes | None = None
         self._scan_response_data: bytes | None = None
@@ -145,12 +142,6 @@ class LegacyDfuBumblePeripheral:
                 Characteristic.READABLE,
                 struct.pack("<H", self.revision),
             )
-            console_output = Characteristic(
-                CONSOLE_OUTPUT_UUID,
-                Characteristic.Properties.READ | Characteristic.Properties.NOTIFY,
-                Characteristic.READABLE,
-                CharacteristicValue(read=self._read_console_output),
-            )
             status_report.on(
                 Characteristic.EVENT_SUBSCRIPTION,
                 self._on_status_subscription,
@@ -161,7 +152,6 @@ class LegacyDfuBumblePeripheral:
                     [control_point, packet, status_report, revision],
                 )
             )
-            device.add_service(Service(CONSOLE_SERVICE_UUID, [console_output]))
             device.on(device.EVENT_CONNECTION, self._on_connection)
 
             # Keep the service UUID in advertising data; the human-friendly
@@ -188,7 +178,6 @@ class LegacyDfuBumblePeripheral:
             self._control_point = control_point
             self._packet = packet
             self._status_report = status_report
-            self._console_output = console_output
             self._advertising_data = advertising_data
             self._scan_response_data = scan_response_data
             await device.power_on()
@@ -234,7 +223,7 @@ class LegacyDfuBumblePeripheral:
 
         A successful legacy activation intentionally disconnects the central;
         this gives a harness or player client a deterministic point at which it
-        can reconnect and read UART output from the uploaded application.
+        can reconnect to the emulated board.
         """
 
         ready = self._application_advertising_ready
@@ -250,7 +239,6 @@ class LegacyDfuBumblePeripheral:
         self._control_point = None
         self._packet = None
         self._status_report = None
-        self._console_output = None
         self._write_lock = None
         self._advertising_data = None
         self._scan_response_data = None
@@ -360,7 +348,6 @@ class LegacyDfuBumblePeripheral:
                 in (DfuOpcode.ACTIVATE_AND_RESET, DfuOpcode.SYSTEM_RESET)
                 and self.bridge.bootloader.state is DfuState.APPLICATION_RUNNING
             ):
-                await self._publish_console_output()
                 if self._application_advertising_ready is not None:
                     self._application_advertising_ready.clear()
                 self._application_reset_task = asyncio.create_task(
@@ -384,18 +371,6 @@ class LegacyDfuBumblePeripheral:
         for notification in notifications:
             await device.notify_subscribers(status_report, notification.payload)
 
-    def _read_console_output(self, _connection: Connection) -> bytes:
-        execution = self.bridge.bootloader.last_execution
-        output = getattr(execution, "uart_output", b"")
-        return bytes(output) if isinstance(output, (bytes, bytearray)) else b""
-
-    async def _publish_console_output(self) -> None:
-        device = self.device
-        console_output = self._console_output
-        output = self._read_console_output(self._connection) if self._connection else b""
-        if device is not None and console_output is not None and output:
-            await device.notify_subscribers(console_output, output)
-
     async def _disconnect_and_advertise_application(self, connection: Connection) -> None:
         await asyncio.sleep(0)
         try:
@@ -409,9 +384,6 @@ class LegacyDfuBumblePeripheral:
                 and self._advertising_data is not None
                 and self._scan_response_data is not None
             ):
-                # Expose the application-phase UART output to a reconnecting
-                # player.  The DFU service remains present for repeatable CTF
-                # runs; no new vulnerability is introduced by this output wire.
                 with suppress(Exception):
                     await device.start_advertising(
                         auto_restart=False,

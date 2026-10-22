@@ -34,8 +34,8 @@ class ReleasePackagingTests(unittest.TestCase):
         self,
         output_dir: Path,
         handout: Path,
-        reference_bootloader_elf: Path,
-        maintenance_firmware_elf: Path,
+        board_flash: Path,
+        runtime_symbols: Path,
     ) -> None:
         environment = {
             **os.environ,
@@ -47,10 +47,10 @@ class ReleasePackagingTests(unittest.TestCase):
                 str(PACKAGER),
                 "--handout",
                 str(handout),
-                "--reference-bootloader-elf",
-                str(reference_bootloader_elf),
-                "--maintenance-firmware-elf",
-                str(maintenance_firmware_elf),
+                "--board-flash",
+                str(board_flash),
+                "--runtime-symbols",
+                str(runtime_symbols),
                 "--output-dir",
                 str(output_dir),
                 "--revision",
@@ -68,23 +68,23 @@ class ReleasePackagingTests(unittest.TestCase):
             root = Path(temporary_directory)
             handout = root / "maintenance_application.bin"
             handout.write_bytes(b"compiled-thumb-firmware\x00\x01\x02")
-            reference_bootloader_elf = root / "nrf51422_xxac.emulator.elf"
-            reference_bootloader_elf.write_bytes(b"stripped-reference-elf\x00\x01")
-            maintenance_firmware_elf = root / "maintenance_application.emulator.elf"
-            maintenance_firmware_elf.write_bytes(b"stripped-maintenance-elf\x00\x01")
+            board_flash = root / "board_flash.bin"
+            board_flash.write_bytes(b"combined-board-flash\x00\x01")
+            runtime_symbols = root / "runtime_symbols.json"
+            runtime_symbols.write_bytes(b'{"format":"test-runtime-symbols"}\n')
             first = root / "first"
             second = root / "second"
             self.build_packages(
                 first,
                 handout,
-                reference_bootloader_elf,
-                maintenance_firmware_elf,
+                board_flash,
+                runtime_symbols,
             )
             self.build_packages(
                 second,
                 handout,
-                reference_bootloader_elf,
-                maintenance_firmware_elf,
+                board_flash,
+                runtime_symbols,
             )
 
             for filename in (ATTACHMENT_ARCHIVE, SERVICE_ARCHIVE, "SHA256SUMS"):
@@ -98,8 +98,8 @@ class ReleasePackagingTests(unittest.TestCase):
                     "Dockerfile",
                     "README.md",
                     "SHA256SUMS",
-                    "artifacts/maintenance_application/maintenance_application.elf",
-                    "artifacts/nrf51_sdk11_legacy_dfu/nrf51422_xxac.elf",
+                    "artifacts/board_runtime/board_flash.bin",
+                    "artifacts/board_runtime/runtime_symbols.json",
                     "compose.yaml",
                     "local_flag.txt",
                     "maintenance_application.bin",
@@ -114,16 +114,12 @@ class ReleasePackagingTests(unittest.TestCase):
                     archive.read("maintenance_application.bin"), handout.read_bytes()
                 )
                 self.assertEqual(
-                    archive.read(
-                        "artifacts/nrf51_sdk11_legacy_dfu/nrf51422_xxac.elf"
-                    ),
-                    reference_bootloader_elf.read_bytes(),
+                    archive.read("artifacts/board_runtime/board_flash.bin"),
+                    board_flash.read_bytes(),
                 )
                 self.assertEqual(
-                    archive.read(
-                        "artifacts/maintenance_application/maintenance_application.elf"
-                    ),
-                    maintenance_firmware_elf.read_bytes(),
+                    archive.read("artifacts/board_runtime/runtime_symbols.json"),
+                    runtime_symbols.read_bytes(),
                 )
                 self.assertEqual(
                     archive.read("local_flag.txt"), b"CTF{local_emulator_test_flag}\n"
@@ -138,6 +134,7 @@ class ReleasePackagingTests(unittest.TestCase):
                     self.assertNotIn("__pycache__", path.parts)
                 self.assertNotIn("src/hitcon_legacy_dfu/payloads.py", names)
                 self.assertNotIn("src/hitcon_legacy_dfu/inmu_king_art.py", names)
+                self.assertFalse(any(name.endswith(".elf") for name in names))
                 self.assertNotIn("scripts/smoke_player_attachment.py", names)
                 player_text = b"\n".join(
                     archive.read(name)
@@ -162,6 +159,8 @@ class ReleasePackagingTests(unittest.TestCase):
                     f"{prefix}firmware/maintenance_application.c",
                     f"{prefix}pyproject.toml",
                     f"{prefix}scripts/build_maintenance_application.sh",
+                    f"{prefix}scripts/build_board_runtime.py",
+                    f"{prefix}src/hitcon_legacy_dfu/board_runtime.py",
                     f"{prefix}src/hitcon_legacy_dfu/session_host.py",
                 }
                 self.assertTrue(required.issubset(names))

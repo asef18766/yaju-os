@@ -9,9 +9,8 @@ import time
 import unittest
 from pathlib import Path
 
+from hitcon_legacy_dfu.board_runtime import BoardRuntimeArtifact
 from hitcon_legacy_dfu.inmu_king_art import INMU_KING_DANCE_FRAMES, INMU_KING_DANCE_LABELS
-from hitcon_legacy_dfu.nrf51_sdk11_runtime import Nrf51Sdk11BootloaderRuntime
-from hitcon_legacy_dfu.maintenance_runtime import MaintenanceFirmwareRuntime
 from hitcon_legacy_dfu.session_host import (
     LegacyDfuSessionHost,
     SessionHostConfig,
@@ -19,8 +18,7 @@ from hitcon_legacy_dfu.session_host import (
 )
 
 
-REFERENCE_ELF = Nrf51Sdk11BootloaderRuntime.repository_reference_elf()
-MAINTENANCE_ELF = MaintenanceFirmwareRuntime.repository_reference_elf()
+BOARD_RUNTIME = BoardRuntimeArtifact.repository_path()
 VALID_MAINTENANCE_REQUEST = bytes.fromhex("11451419198100")
 
 
@@ -37,8 +35,8 @@ async def _wait_until(predicate, timeout: float = 15.0) -> None:
     importlib.util.find_spec("qiling") is not None
     and importlib.util.find_spec("bumble") is not None
     and importlib.util.find_spec("rootcanal") is not None
-    and REFERENCE_ELF.is_file()
-    and MAINTENANCE_ELF.is_file(),
+    and (BOARD_RUNTIME / "board_flash.bin").is_file()
+    and (BOARD_RUNTIME / "runtime_symbols.json").is_file(),
     "Qiling, Rootcanal, or a built nRF51 challenge firmware artifact is unavailable",
 )
 class SessionHostIntegrationTests(unittest.IsolatedAsyncioTestCase):
@@ -54,11 +52,11 @@ class SessionHostIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     listen_host="127.0.0.1",
                     listen_port=0,
                     secret_file=Path(secret_file.name),
-                    reference_bootloader_elf=REFERENCE_ELF,
+                    reference_bootloader_elf=None,
                     rootcanal_binary=_default_rootcanal_binary(),
                     max_sessions=1,
                     startup_timeout=15.0,
-                    maintenance_firmware_elf=MAINTENANCE_ELF,
+                    board_runtime=BOARD_RUNTIME,
                 )
             )
             await host.start()
@@ -93,7 +91,7 @@ class SessionHostIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     await preview.communicate()
                 await host.stop()
 
-    async def test_each_player_tcp_connection_gets_and_releases_a_direct_elf_target(self) -> None:
+    async def test_each_player_tcp_connection_gets_and_releases_a_board_target(self) -> None:
         """The public TCP socket owns one Rootcanal/Qiling pair until EOF."""
 
         with tempfile.NamedTemporaryFile() as secret_file:
@@ -104,11 +102,11 @@ class SessionHostIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     listen_host="127.0.0.1",
                     listen_port=0,
                     secret_file=Path(secret_file.name),
-                    reference_bootloader_elf=REFERENCE_ELF,
+                    reference_bootloader_elf=None,
                     rootcanal_binary=_default_rootcanal_binary(),
                     max_sessions=2,
                     startup_timeout=15.0,
-                    maintenance_firmware_elf=MAINTENANCE_ELF,
+                    board_runtime=BOARD_RUNTIME,
                 )
             )
             await host.start()
@@ -156,11 +154,11 @@ class SessionHostIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     listen_host="127.0.0.1",
                     listen_port=0,
                     secret_file=Path(secret_file.name),
-                    reference_bootloader_elf=REFERENCE_ELF,
+                    reference_bootloader_elf=None,
                     rootcanal_binary=_default_rootcanal_binary(),
                     max_sessions=1,
                     startup_timeout=15.0,
-                    maintenance_firmware_elf=MAINTENANCE_ELF,
+                    board_runtime=BOARD_RUNTIME,
                 )
             )
             await host.start()

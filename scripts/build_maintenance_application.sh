@@ -54,11 +54,10 @@ mkdir -p -- "${artifact_dir}"
 arm-none-eabi-objcopy -O binary "${elf}" "${bin}"
 arm-none-eabi-objcopy -O ihex "${elf}" "${hex}"
 
-# The local player lab needs an ELF because the narrow Qiling/S130 adapter
-# loads program segments and calls a few firmware ABI entry points.  Do not
-# ship the full linker symbol table: local data symbols would disclose the
-# maintenance transformation and turn the reversing step into an ``nm``
-# lookup.  Keep only the four adapter entry points and actual SVC wrappers.
+# This ELF is used only while generating runtime_symbols.json for the combined
+# board image; it is not shipped to players.  Keep only the four adapter entry
+# points and actual SVC wrappers so the intermediate also avoids disclosing
+# local symbols for the maintenance transformation.
 keep_symbols=$(mktemp)
 trap 'rm -f -- "${keep_symbols}"' EXIT
 {
@@ -83,7 +82,7 @@ arm-none-eabi-size -A "${elf}" > "${artifact_dir}/size.txt"
     printf 'target=nrf51422_xxac\n'
     printf 'application_base=0x0001b000\n'
     printf 'player_handout=maintenance_application.bin\n'
-    printf 'player_emulator_elf=maintenance_application.emulator.elf\n'
+    printf 'board_runtime_metadata_input=maintenance_application.emulator.elf\n'
     printf 'compiler=%s\n' "$(arm-none-eabi-gcc --version | head -1)"
 } > "${artifact_dir}/BUILD_INFO"
 (
