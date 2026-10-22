@@ -33,7 +33,6 @@ class ReleasePackagingTests(unittest.TestCase):
     def build_packages(
         self,
         output_dir: Path,
-        handout: Path,
         board_flash: Path,
         runtime_symbols: Path,
     ) -> None:
@@ -45,8 +44,6 @@ class ReleasePackagingTests(unittest.TestCase):
             [
                 sys.executable,
                 str(PACKAGER),
-                "--handout",
-                str(handout),
                 "--board-flash",
                 str(board_flash),
                 "--runtime-symbols",
@@ -66,8 +63,6 @@ class ReleasePackagingTests(unittest.TestCase):
     def test_release_archives_are_deterministic_and_safely_scoped(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
-            handout = root / "maintenance_application.bin"
-            handout.write_bytes(b"compiled-thumb-firmware\x00\x01\x02")
             board_flash = root / "board_flash.bin"
             board_flash.write_bytes(b"combined-board-flash\x00\x01")
             runtime_symbols = root / "runtime_symbols.json"
@@ -76,13 +71,11 @@ class ReleasePackagingTests(unittest.TestCase):
             second = root / "second"
             self.build_packages(
                 first,
-                handout,
                 board_flash,
                 runtime_symbols,
             )
             self.build_packages(
                 second,
-                handout,
                 board_flash,
                 runtime_symbols,
             )
@@ -102,7 +95,6 @@ class ReleasePackagingTests(unittest.TestCase):
                     "artifacts/board_runtime/runtime_symbols.json",
                     "compose.yaml",
                     "local_flag.txt",
-                    "maintenance_application.bin",
                     "pyproject.toml",
                     "src/hitcon_legacy_dfu/maintenance_runtime.py",
                     "src/hitcon_legacy_dfu/qiling_runtime.py",
@@ -110,9 +102,6 @@ class ReleasePackagingTests(unittest.TestCase):
                     "workspace/probe.py",
                 }
                 self.assertTrue(required.issubset(names))
-                self.assertEqual(
-                    archive.read("maintenance_application.bin"), handout.read_bytes()
-                )
                 self.assertEqual(
                     archive.read("artifacts/board_runtime/board_flash.bin"),
                     board_flash.read_bytes(),
@@ -134,6 +123,11 @@ class ReleasePackagingTests(unittest.TestCase):
                     self.assertNotIn("__pycache__", path.parts)
                 self.assertNotIn("src/hitcon_legacy_dfu/payloads.py", names)
                 self.assertNotIn("src/hitcon_legacy_dfu/inmu_king_art.py", names)
+                self.assertNotIn("maintenance_application.bin", names)
+                self.assertEqual(
+                    {name for name in names if name.endswith(".bin")},
+                    {"artifacts/board_runtime/board_flash.bin"},
+                )
                 self.assertFalse(any(name.endswith(".elf") for name in names))
                 self.assertNotIn("scripts/smoke_player_attachment.py", names)
                 player_text = b"\n".join(

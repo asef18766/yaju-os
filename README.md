@@ -7,9 +7,9 @@ service 取回；沒有 parser bug、memory corruption、UART console 或 Web �
 ## 參賽者流程
 
 裝置一開始是普通的 `HITCON Field Node`，只廣播 vendor maintenance service，不會出現
-Nordic DFU UUID。題目附件提供 `maintenance_application.bin`：參賽者先 reverse 這個正常
-application，找出它接受的 maintenance-mode request，對 control characteristic 寫入後，裝置會
-reset。
+Nordic DFU UUID。題目附件只提供完整的 `board_flash.bin`；參賽者從 `0x1b000` 的正常
+application 區域進行 reverse，找出它接受的 maintenance-mode request，對 control
+characteristic 寫入後，裝置會 reset。
 
 重新連線後才會出現 Nordic legacy DFU service (`1530`)。此時無簽章的 legacy DFU 才是題目的
 漏洞：刷入自己的 application、讀 `P0.IN`，並透過 S130 ABI 註冊自己的唯讀 GATT
@@ -32,8 +32,9 @@ player 斷線後，這組 instance 會一起結束。
 
 ## 實作邊界
 
-- `maintenance_application.bin` 是真正編譯的 nRF51 Thumb firmware，載入 Qiling 後由其
-  `maintenance_command()` 驗證 GATT request，並寫入 `POWER.GPREGRET = 0xb1`。
+- `board_flash.bin` 內從 `0x1b000` 開始的 application 是真正編譯的 nRF51 Thumb firmware，
+  載入 Qiling 後由其 `maintenance_command()` 驗證 GATT request，並寫入
+  `POWER.GPREGRET = 0xb1`。
 - maintenance application 透過真正的 S130 ABI 呼叫 `sd_ble_uuid_vs_add()`、
   `sd_ble_gatts_service_add()` 與 `sd_ble_gatts_characteristic_add()` 建立動畫 GATT service；
   `BLE_GATTS_EVT_RW_AUTHORIZE_REQUEST` 的處理與 `sd_ble_gatts_rw_authorize_reply()` 也都在 Thumb
@@ -63,7 +64,7 @@ BLE event、authorization reply、notification 與 flash-completion ABI。
 含換行共 125 bytes，不含標題、幀號或 NUL。部分幀刻意重複以停留在關鍵動作。
 
 上述 UUID base、10 個 unique poses、54-entry timeline、cursor、service initialization 與 read
-event handler 都編進 `maintenance_application.bin`。Python server/runtime 不使用 Inmu King UUID、
+event handler 都編進 `board_flash.bin` 的 application 區域。Python server/runtime 不使用 Inmu King UUID、
 frame list 或 next-frame counter；公開的 Python UUID 常數只供 client、文件與測試使用。transport
 只攔截通用 S130 SVC、合成 `ble_evt_t`，並把 firmware 的 authorize reply 交回 Bumble。由於沒有
 執行 proprietary S130，Read Blob 的 attribute snapshot 留在這層 SoftDevice adapter，避免分段讀到
@@ -113,16 +114,15 @@ FLAG_FILE=./flag.txt docker compose up --build
 
 Host 對外只開 `6402/tcp`，這是 HCI/H4 TCP，不是 DFU-over-TCP。用 `HCI_PORT=7402` 可改 port。
 
-Compose image 內含給參賽者逆向用的 raw firmware：
+Compose image 只保留執行 target 所需的完整 `/app/artifacts/board_runtime/board_flash.bin` 與
+`runtime_symbols.json`，不再另放一份 application firmware。
 
-```bash
-docker compose cp host:/app/handout/maintenance_application.bin ./maintenance_application.bin
-```
-
-正式 attachment 除了這個 `.bin`，也包含可在本機啟動相同 Rootcanal + Qiling target 的 Docker
-Compose lab、player-safe Python harness、單一完整 board flash 與 narrow runtime metadata、固定的 local test flag 與一支無害
-GATT probe。`firmware/maintenance_application.c` 仍只存在出題端 source／service bundle，不會放進
-player attachment；已知 maintenance command 與範例 exploit payload 也不會被打包。
+正式 attachment 同樣只提供單一完整 board flash，以及可在本機啟動相同 Rootcanal + Qiling
+target 的 Docker Compose lab、player-safe Python harness、narrow runtime metadata、固定的 local
+test flag 與一支無害 GATT probe。`board_flash.bin` 應以 image base `0` 載入；application 從
+`0x1b000` 開始，bootloader 從 `0x3c000` 開始，需要時可自行依此切割。
+`firmware/maintenance_application.c` 仍只存在出題端 source／service bundle，不會放進 player
+attachment；已知 maintenance command 與範例 exploit payload 也不會被打包。
 
 ## 本機建置
 
@@ -178,9 +178,8 @@ service。
 GitHub Actions 會使用專案的 Dockerfile 建置正式映像、執行完整測試，接著產生一個 workflow
 artifact，其中固定包含：
 
-- `hitcon-legacy-dfu-attachment.zip`：給參賽者的
-  `maintenance_application.bin`、Rootcanal/Qiling emulator harness、單一 `board_flash.bin`、
-  `runtime_symbols.json`、Docker
+- `hitcon-legacy-dfu-attachment.zip`：給參賽者的 Rootcanal/Qiling emulator harness、唯一的
+  firmware blob `board_flash.bin`、`runtime_symbols.json`、Docker
   Compose local lab、公開 local test flag、GATT probe、build metadata 與 SHA-256 manifest；不含
   firmware source、organizer tests、已知 maintenance command 或 solution payload generator。
 - `hitcon-legacy-dfu-service.zip`：可直接部署的 Docker Compose build context、部署說明與
@@ -204,7 +203,6 @@ Artifacts 區下載。
 ```bash
 SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)" \
 python3 scripts/package_release.py \
-  --handout artifacts/maintenance_application/maintenance_application.bin \
   --board-flash artifacts/board_runtime/board_flash.bin \
   --runtime-symbols artifacts/board_runtime/runtime_symbols.json \
   --revision "$(git rev-parse HEAD)"

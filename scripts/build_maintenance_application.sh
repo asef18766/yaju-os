@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the normal application phase and the binary handed to CTF players.
+# Build the normal application phase used to assemble the combined board flash.
 set -euo pipefail
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
@@ -81,7 +81,7 @@ arm-none-eabi-size -A "${elf}" > "${artifact_dir}/size.txt"
 {
     printf 'target=nrf51422_xxac\n'
     printf 'application_base=0x0001b000\n'
-    printf 'player_handout=maintenance_application.bin\n'
+    printf 'board_flash_source=maintenance_application.bin\n'
     printf 'board_runtime_metadata_input=maintenance_application.emulator.elf\n'
     printf 'compiler=%s\n' "$(arm-none-eabi-gcc --version | head -1)"
 } > "${artifact_dir}/BUILD_INFO"

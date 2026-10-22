@@ -51,7 +51,6 @@ COPY pyproject.toml README.md ./
 COPY src ./src
 RUN python -m pip install '.[full]'
 COPY --from=bootloader-build /build/artifacts/board_runtime ./artifacts/board_runtime
-COPY --from=bootloader-build /build/artifacts/maintenance_application/maintenance_application.bin ./handout/maintenance_application.bin
 
 RUN useradd --create-home --uid 10001 ctf \
     && chown -R ctf:ctf /app

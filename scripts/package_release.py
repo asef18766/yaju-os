@@ -99,12 +99,6 @@ def parse_args() -> argparse.Namespace:
         description="Package the player handout and deployable service source."
     )
     parser.add_argument(
-        "--handout",
-        type=Path,
-        required=True,
-        help="compiled maintenance_application.bin produced by the firmware build",
-    )
-    parser.add_argument(
         "--board-flash",
         type=Path,
         required=True,
@@ -181,12 +175,10 @@ def checksum_manifest(entries: dict[str, ArchiveEntry]) -> bytes:
 
 
 def attachment_entries(
-    handout: Path,
     board_flash: Path,
     runtime_symbols: Path,
     revision: str,
 ) -> dict[str, ArchiveEntry]:
-    firmware = read_artifact(handout, "handout firmware")
     board = read_artifact(board_flash, "combined board flash")
     symbols = read_artifact(runtime_symbols, "board runtime symbols")
     entries = {
@@ -202,14 +194,12 @@ def attachment_entries(
                     f"revision={revision}\n"
                     "target=nrf51422_xxac\n"
                     "application_base=0x0001b000\n"
-                    f"firmware_sha256={hashlib.sha256(firmware.data).hexdigest()}\n"
                     "board_flash_sha256="
                     f"{hashlib.sha256(board.data).hexdigest()}\n"
                     "runtime_symbols_sha256="
                     f"{hashlib.sha256(symbols.data).hexdigest()}\n"
                 ).encode("ascii")
             ),
-            "maintenance_application.bin": firmware,
             "artifacts/board_runtime/board_flash.bin": board,
             "artifacts/board_runtime/runtime_symbols.json": symbols,
         }
@@ -253,7 +243,6 @@ def write_zip(
 
 
 def package(
-    handout: Path,
     board_flash: Path,
     runtime_symbols: Path,
     output_dir: Path,
@@ -268,7 +257,6 @@ def package(
     write_zip(
         attachment_path,
         attachment_entries(
-            handout,
             board_flash,
             runtime_symbols,
             revision,
@@ -298,7 +286,6 @@ def main() -> int:
     args = parse_args()
     try:
         outputs = package(
-            args.handout,
             args.board_flash,
             args.runtime_symbols,
             args.output_dir,

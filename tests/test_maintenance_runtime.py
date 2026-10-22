@@ -19,10 +19,10 @@ VALID_MAINTENANCE_REQUEST = bytes.fromhex("11451419198100")
     "Qiling or the built maintenance application ELF is unavailable",
 )
 class MaintenanceFirmwareRuntimeTests(unittest.TestCase):
-    def test_player_handout_contains_animation_gatts_calls_and_art(self) -> None:
-        handout = REFERENCE_ELF.with_suffix(".bin")
-        self.assertTrue(handout.is_file())
-        image = handout.read_bytes()
+    def test_board_flash_contains_animation_gatts_calls_and_art(self) -> None:
+        board_flash = REFERENCE_ELF.with_suffix(".bin")
+        self.assertTrue(board_flash.is_file())
+        image = board_flash.read_bytes()
         # S130 stores the shared vendor base little-endian and receives the
         # service/characteristic 16-bit portions through its GATTS structs.
         self.assertIn(bytes.fromhex("6d8bd5c186a72c948d4c5d7c00001c5a"), image)

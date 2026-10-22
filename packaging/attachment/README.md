@@ -72,10 +72,11 @@ docker compose down
 
 ## Files
 
-- `maintenance_application.bin` is the raw Cortex-M0 application firmware,
-  linked at `0x0001b000`, that is intended for reverse engineering.
-- `artifacts/board_runtime/board_flash.bin` is one complete 256 KiB nRF51
-  flash image containing both the normal application and legacy bootloader.
+- `artifacts/board_runtime/board_flash.bin` is the only firmware blob: one
+  complete 256 KiB nRF51 flash image containing both the normal application
+  and legacy bootloader. Load it at image base `0`; the application starts at
+  `0x0001b000` and the bootloader starts at `0x0003c000`. You may carve those
+  regions yourself if your reverse-engineering tool requires separate images.
 - `artifacts/board_runtime/runtime_symbols.json` contains only the narrow
   entry-point/SVC ABI metadata Qiling needs to execute that raw image.
 - `src/` is the player-safe emulator/transport harness.

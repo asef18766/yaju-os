@@ -44,11 +44,10 @@ jobs:
       - name: Extract compiled player runtime artifacts
         run: |
           mkdir -p build/ci-handout
+          docker run --rm --entrypoint sh "${CI_IMAGE}" \
+            -c 'test ! -e /app/handout'
           container_id=$(docker create "${CI_IMAGE}")
           trap 'docker rm -f "${container_id}" >/dev/null 2>&1 || true' EXIT
-          docker cp \
-            "${container_id}:/app/handout/maintenance_application.bin" \
-            build/ci-handout/maintenance_application.bin
           docker cp \
             "${container_id}:/app/artifacts/board_runtime/board_flash.bin" \
             build/ci-handout/board_flash.bin
@@ -62,7 +61,6 @@ jobs:
         run: |
           source_date_epoch=$(git show -s --format=%ct HEAD)
           SOURCE_DATE_EPOCH="${source_date_epoch}" python3 scripts/package_release.py \
-            --handout build/ci-handout/maintenance_application.bin \
             --board-flash build/ci-handout/board_flash.bin \
             --runtime-symbols build/ci-handout/runtime_symbols.json \
             --output-dir dist \
@@ -78,14 +76,12 @@ jobs:
             dist/hitcon-legacy-dfu-service.zip \
             build/archive-smoke/service
           cmp \
-            build/ci-handout/maintenance_application.bin \
-            build/archive-smoke/attachment/maintenance_application.bin
-          cmp \
             build/ci-handout/board_flash.bin \
             build/archive-smoke/attachment/artifacts/board_runtime/board_flash.bin
           cmp \
             build/ci-handout/runtime_symbols.json \
             build/archive-smoke/attachment/artifacts/board_runtime/runtime_symbols.json
+          test ! -e build/archive-smoke/attachment/maintenance_application.bin
           (cd build/archive-smoke/attachment && sha256sum --check SHA256SUMS)
           (cd build/archive-smoke/service/hitcon-legacy-dfu-service && sha256sum --check SHA256SUMS)
           (cd dist && sha256sum --check SHA256SUMS)
