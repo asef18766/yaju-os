@@ -47,6 +47,20 @@ if TYPE_CHECKING:
 # short controller-detach interval before the replacement begins advertising.
 _CONTROLLER_REPLACEMENT_DELAY = 0.1
 
+# S130 2.0.0 on nRF51 is a Bluetooth 4.1 stack: its ATT MTU is fixed at 23, so
+# the real target answers every Exchange MTU Request with 23 and never accepts
+# a DFU packet longer than twenty value bytes.  Bumble's server would otherwise
+# negotiate up to its own 517-byte maximum, which lets a standards-compliant
+# central (nRF Connect for Android requests 517 before a legacy DFU upload)
+# send writes the compiled bootloader rejects.
+_S130_ATT_MTU = 23
+
+
+def _fix_att_mtu_to_s130(device: "Device") -> None:
+    """Negotiate the single ATT MTU that the modelled SoftDevice supports."""
+
+    device.gatt_server.max_mtu = _S130_ATT_MTU
+
 
 class BumbleUnavailable(RuntimeError):
     """The optional Bumble/Rootcanal transport dependencies are unavailable."""
@@ -157,6 +171,7 @@ class Nrf51Sdk11BumblePeripheral:
                 transport.source,
                 transport.sink,
             )
+            _fix_att_mtu_to_s130(device)
 
             # SDK 11 has the response notification on the control point
             # itself (1531), not the model-only 1533 status characteristic.
@@ -305,6 +320,36 @@ class Nrf51Sdk11BumblePeripheral:
         if self.bootloader_runtime.connected:
             with suppress(Exception):
                 self.bootloader_runtime.disconnect()
+        if self._application_reset_task is None:
+            # A reset owns advertising itself; any other disconnect is the
+            # ordinary one the board survives.
+            self._restart_advertising()
+
+    def _restart_advertising(self) -> None:
+        """Advertise again after a disconnect, exactly as the board does.
+
+        Both the SDK 11 bootloader and an ordinary nRF51 application call
+        ``advertising_start`` from their ``BLE_GAP_EVT_DISCONNECTED`` handler,
+        so a central may connect, drop the link, and come back.  Centrals rely
+        on it: nRF Connect for Android closes its own GATT connection before
+        handing the device to its DFU service.
+        """
+
+        device = self.device
+        advertising_data = self._advertising_data
+        scan_response_data = self._scan_response_data
+        if device is None or advertising_data is None or scan_response_data is None:
+            return
+
+        async def restart() -> None:
+            with suppress(Exception):
+                await device.start_advertising(
+                    auto_restart=False,
+                    advertising_data=advertising_data,
+                    scan_response_data=scan_response_data,
+                )
+
+        asyncio.create_task(restart())
 
     def _on_control_point_subscription(
         self,
@@ -499,6 +544,7 @@ class Nrf51Sdk11BumblePeripheral:
                 transport.source,
                 transport.sink,
             )
+            _fix_att_mtu_to_s130(device)
             installed_service_uuids: list[str] = []
             for definition in self._application_services:
                 characteristics: list[Characteristic[bytes]] = []
@@ -579,6 +625,8 @@ class MaintenanceApplicationBumblePeripheral:
         self._connection: Connection | None = None
         self._control: Characteristic[bytes] | None = None
         self._firmware_gatt_server: S130GattServer | None = None
+        self._advertising_data: bytes | None = None
+        self._scan_response_data: bytes | None = None
         self._write_lock: asyncio.Lock | None = None
         self._bootloader_requested: asyncio.Event | None = None
         self._handoff_ready: asyncio.Event | None = None
@@ -623,6 +671,7 @@ class MaintenanceApplicationBumblePeripheral:
                 transport.source,
                 transport.sink,
             )
+            _fix_att_mtu_to_s130(device)
             control = Characteristic(
                 MAINTENANCE_CONTROL_UUID,
                 Characteristic.Properties.WRITE,
@@ -660,6 +709,8 @@ class MaintenanceApplicationBumblePeripheral:
             self._transport = transport
             self._control = control
             self._firmware_gatt_server = firmware_gatt_server
+            self._advertising_data = advertising_data
+            self._scan_response_data = scan_response_data
             await device.power_on()
             await device.start_advertising(
                 auto_restart=False,
@@ -722,6 +773,8 @@ class MaintenanceApplicationBumblePeripheral:
         self._handoff_ready = None
         self._disconnect_task = None
         self._att_unlikely_error = None
+        self._advertising_data = None
+        self._scan_response_data = None
         self.device = None
         self._transport = None
 
@@ -754,6 +807,30 @@ class MaintenanceApplicationBumblePeripheral:
                 with suppress(Exception):
                     firmware_gatt_server.disconnect_connection(connection)
             self._connection = None
+            requested = self._bootloader_requested
+            if requested is None or not requested.is_set():
+                # Only an accepted maintenance request retires this controller;
+                # a plain disconnect leaves the application advertising.
+                self._restart_advertising()
+
+    def _restart_advertising(self) -> None:
+        """Advertise again after a disconnect the application survives."""
+
+        device = self.device
+        advertising_data = self._advertising_data
+        scan_response_data = self._scan_response_data
+        if device is None or advertising_data is None or scan_response_data is None:
+            return
+
+        async def restart() -> None:
+            with suppress(Exception):
+                await device.start_advertising(
+                    auto_restart=False,
+                    advertising_data=advertising_data,
+                    scan_response_data=scan_response_data,
+                )
+
+        asyncio.create_task(restart())
 
     async def _on_control_write(self, connection: Connection, payload: bytes) -> None:
         lock = self._write_lock
