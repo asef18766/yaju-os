@@ -17,14 +17,16 @@ import struct
 from typing import TYPE_CHECKING
 
 from .bridge import GattStateError, LegacyDfuGattBridge
-from .gatt_ids import (
+from .protocol import (
     CONTROL_POINT_UUID,
     PACKET_UUID,
     REVISION_UUID,
     SERVICE_UUID,
+    STATUS_REPORT_UUID,
+    DfuNotification,
     DfuOpcode,
+    DfuState,
 )
-from .protocol import STATUS_REPORT_UUID, DfuNotification, DfuState
 
 if TYPE_CHECKING:
     from bumble.device import Connection, Device

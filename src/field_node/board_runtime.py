@@ -18,7 +18,7 @@ from typing import Any
 
 
 BOARD_RUNTIME_FORMAT = "hitcon-nrf51-board-runtime"
-BOARD_RUNTIME_VERSION = 1
+BOARD_RUNTIME_VERSION = 2
 BOARD_FLASH_SIZE = 0x0004_0000
 BOARD_FLASH_FILENAME = "board_flash.bin"
 BOARD_METADATA_FILENAME = "runtime_symbols.json"

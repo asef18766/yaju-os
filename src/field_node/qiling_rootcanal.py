@@ -1,14 +1,14 @@
-"""Rootcanal/Bumble peripheral backed by the compiled Nordic SDK 11 ELF.
+"""Rootcanal/Bumble peripheral backed by the board's compiled firmware.
 
 The transport boundary is deliberately small and explicit:
 
 * Bumble owns the HCI/ATT transport that represents the proprietary S130.
-* :class:`Nrf51Sdk11BootloaderRuntime` turns those callbacks into S130 BLE
+* :class:`SecondStageFirmwareRuntime` turns those callbacks into S130 BLE
   events for the compiled bootloader running under Qiling.
 * S130's radio implementation is still represented by the runtime's narrow
   ABI shim; this module does not claim to emulate the proprietary SoftDevice.
 
-Consequently, the legacy DFU state machine, init-packet checks, CRC,
+Consequently, the transfer state machine, metadata checks, CRC,
 ``pstorage_raw`` flash queue, and dual-bank image copy are all ARM code from
 the official SDK ELF rather than a second Python transfer implementation.
 """
@@ -17,21 +17,16 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import suppress
-import struct
 from typing import TYPE_CHECKING, Protocol
 
 from .gatt_ids import (
-    CONTROL_POINT_UUID,
     MAINTENANCE_CONTROL_UUID,
     MAINTENANCE_INFO_UUID,
     MAINTENANCE_SERVICE_UUID,
-    PACKET_UUID,
-    REVISION_UUID,
-    SERVICE_UUID,
-    DfuOpcode,
 )
-from .maintenance_runtime import FirmwareGattService, MaintenanceFirmwareRuntime
-from .nrf51_sdk11_runtime import Nrf51Sdk11BootloaderRuntime, Nrf51Sdk11RuntimeError
+from .maintenance_runtime import MaintenanceFirmwareRuntime
+from .s130_abi import FirmwareGattService
+from .second_stage_runtime import SecondStageFirmwareRuntime, SecondStageFirmwareError
 
 if TYPE_CHECKING:
     from bumble.device import Connection, Device
@@ -49,11 +44,15 @@ _CONTROLLER_REPLACEMENT_DELAY = 0.1
 
 # S130 2.0.0 on nRF51 is a Bluetooth 4.1 stack: its ATT MTU is fixed at 23, so
 # the real target answers every Exchange MTU Request with 23 and never accepts
-# a DFU packet longer than twenty value bytes.  Bumble's server would otherwise
+# a packet longer than twenty value bytes.  Bumble's server would otherwise
 # negotiate up to its own 517-byte maximum, which lets a standards-compliant
-# central (nRF Connect for Android requests 517 before a legacy DFU upload)
+# central (nRF Connect for Android requests 517 before an upload)
 # send writes the compiled bootloader rejects.
 _S130_ATT_MTU = 23
+
+# The only control-point opcode this transport has to recognise: everything
+# else is decided by the compiled firmware it forwards writes to.
+_OPCODE_ACTIVATE_AND_RESET = 0x05
 
 
 def _fix_att_mtu_to_s130(device: "Device") -> None:
@@ -69,11 +68,11 @@ def _restart_advertising(
 ) -> None:
     """Advertise again after a disconnect, exactly as the board does.
 
-    Both the SDK 11 bootloader and an ordinary nRF51 application call
+    Both the second-stage firmware and an ordinary nRF51 application call
     ``advertising_start`` from their ``BLE_GAP_EVT_DISCONNECTED`` handler, so a
     central may connect, drop the link, and come back.  Centrals rely on it:
     nRF Connect for Android closes its own GATT connection before handing the
-    device to its DFU service.
+    device to its update service.
     """
 
     if device is None or advertising_data is None or scan_response_data is None:
@@ -108,30 +107,27 @@ class ApplicationRuntime(Protocol):
     ) -> ApplicationExecution: ...
 
 
-class Nrf51Sdk11BumblePeripheral:
-    """Expose a real SDK 11 legacy DFU bootloader over Rootcanal HCI.
+class SecondStageBumblePeripheral:
+    """Expose the compiled second-stage firmware over Rootcanal HCI.
 
-    This is intentionally separate from :class:`LegacyDfuBumblePeripheral`:
+    This is intentionally separate from the Python model peripheral:
     the latter is useful as a compact challenge model, while this class has no
-    Python legacy-DFU state machine at all.  Every DFU command is delivered to
+    Python state machine at all.  Every command is delivered to
     the reference ELF through Qiling.
     """
 
     def __init__(
         self,
-        bootloader_runtime: Nrf51Sdk11BootloaderRuntime,
+        bootloader_runtime: SecondStageFirmwareRuntime,
         application_runtime: ApplicationRuntime,
         *,
         application_base: int = 0x1B000,
-        name: str = "HITCON Legacy DFU",
+        name: str = "HITCON Field Node",
         address: str = "F6:F7:F8:F9:FA:FB",
-        revision: int = 8,
     ) -> None:
         encoded_name = name.encode("utf-8")
         if not encoded_name or len(encoded_name) > 29:
             raise ValueError("BLE local name must be between 1 and 29 UTF-8 bytes")
-        if not 0 <= revision <= 0xFFFF:
-            raise ValueError("revision must fit in uint16")
         if not 0 <= application_base <= 0xFFFF_FFFF:
             raise ValueError("application_base must fit in uint32")
 
@@ -140,7 +136,6 @@ class Nrf51Sdk11BumblePeripheral:
         self.application_base = application_base
         self.name = name
         self.address = address
-        self.revision = revision
         self.device: Device | None = None
         self._transport: Transport | None = None
         self._hci_transport: str | None = None
@@ -152,7 +147,7 @@ class Nrf51Sdk11BumblePeripheral:
         self._scan_response_data: bytes | None = None
         self._application_reset_task: asyncio.Task[None] | None = None
         self._application_advertising_ready: asyncio.Event | None = None
-        self._phase = "dfu"
+        self._phase = "second_stage"
         self._application_services: tuple[FirmwareGattService, ...] = ()
 
     @property
@@ -184,12 +179,12 @@ class Nrf51Sdk11BumblePeripheral:
         # worker thread, so the Rootcanal HCI pump remains responsive while
         # pstorage processes a page erase or application copy.
         await asyncio.to_thread(self.bootloader_runtime.boot)
-        _ = self.bootloader_runtime.dfu_handles
+        _ = self.bootloader_runtime.service_handles
         self._att_unlikely_error = att.ATT_UNLIKELY_ERROR_ERROR
         self._write_lock = asyncio.Lock()
         self._application_advertising_ready = asyncio.Event()
         self._hci_transport = hci_transport
-        self._phase = "dfu"
+        self._phase = "second_stage"
         self._application_services = ()
         transport = await open_transport(hci_transport)
         try:
@@ -201,32 +196,53 @@ class Nrf51Sdk11BumblePeripheral:
             )
             _fix_att_mtu_to_s130(device)
 
-            # SDK 11 has the response notification on the control point
-            # itself (1531), not the model-only 1533 status characteristic.
-            control_point = Characteristic(
-                CONTROL_POINT_UUID,
-                Characteristic.Properties.WRITE | Characteristic.Properties.NOTIFY,
-                Characteristic.WRITEABLE,
-                CharacteristicValue(write=self._on_control_point_write),
-            )
-            packet = Characteristic(
-                PACKET_UUID,
-                Characteristic.Properties.WRITE_WITHOUT_RESPONSE,
-                Characteristic.WRITEABLE,
-                CharacteristicValue(write=self._on_packet_write),
-            )
-            revision = Characteristic(
-                REVISION_UUID,
-                Characteristic.Properties.READ,
-                Characteristic.READABLE,
-                struct.pack("<H", self.revision),
-            )
-            control_point.on(Characteristic.EVENT_SUBSCRIPTION, self._on_control_point_subscription)
-            # Put packet first to match the service construction order in the
-            # official target.  External ATT handles need not equal the
-            # SoftDevice handles: callbacks below map each GATT operation to
-            # the actual handle allocated inside the ELF.
-            device.add_service(Service(SERVICE_UUID, [packet, control_point, revision]))
+            # The attribute table is whatever the compiled firmware just
+            # registered, in its own registration order.  External ATT handles
+            # need not equal the SoftDevice handles: the firmware's own value
+            # handles say which characteristic each callback belongs to, and
+            # the response notification rides on the writable one rather than
+            # on a separate status characteristic.
+            firmware_service = self.bootloader_runtime.gatt_service
+            handles = self.bootloader_runtime.service_handles
+            control_point: Characteristic[bytes] | None = None
+            packet: Characteristic[bytes] | None = None
+            characteristics: list[Characteristic[bytes]] = []
+            for registration in firmware_service.characteristics:
+                if registration.firmware_value_handle == handles.packet_value:
+                    packet = Characteristic(
+                        registration.uuid,
+                        Characteristic.Properties.WRITE_WITHOUT_RESPONSE,
+                        Characteristic.WRITEABLE,
+                        CharacteristicValue(write=self._on_packet_write),
+                    )
+                    characteristics.append(packet)
+                elif registration.firmware_value_handle == handles.control_point_value:
+                    control_point = Characteristic(
+                        registration.uuid,
+                        Characteristic.Properties.WRITE
+                        | Characteristic.Properties.NOTIFY,
+                        Characteristic.WRITEABLE,
+                        CharacteristicValue(write=self._on_control_point_write),
+                    )
+                    control_point.on(
+                        Characteristic.EVENT_SUBSCRIPTION,
+                        self._on_control_point_subscription,
+                    )
+                    characteristics.append(control_point)
+                else:
+                    characteristics.append(
+                        Characteristic(
+                            registration.uuid,
+                            Characteristic.Properties.READ,
+                            Characteristic.READABLE,
+                            registration.initial_value,
+                        )
+                    )
+            if control_point is None or packet is None:
+                raise SecondStageFirmwareError(
+                    "compiled firmware registered no writable update characteristics"
+                )
+            device.add_service(Service(firmware_service.uuid, characteristics))
             device.on(device.EVENT_CONNECTION, self._on_connection)
 
             advertising_data = bytes(
@@ -235,7 +251,7 @@ class Nrf51Sdk11BumblePeripheral:
                         (AdvertisingData.FLAGS, bytes((0x06,))),
                         (
                             AdvertisingData.COMPLETE_LIST_OF_128_BIT_SERVICE_CLASS_UUIDS,
-                            UUID(SERVICE_UUID).to_bytes(force_128=True),
+                            UUID(firmware_service.uuid).to_bytes(force_128=True),
                         ),
                     ]
                 )
@@ -285,7 +301,7 @@ class Nrf51Sdk11BumblePeripheral:
         if transport is not None:
             await transport.close()
 
-    async def __aenter__(self) -> "Nrf51Sdk11BumblePeripheral":
+    async def __aenter__(self) -> "SecondStageBumblePeripheral":
         return self
 
     async def __aexit__(self, *_exc_info: object) -> None:
@@ -323,7 +339,7 @@ class Nrf51Sdk11BumblePeripheral:
             return
 
         self._connection = connection
-        if self._phase == "dfu":
+        if self._phase == "second_stage":
             try:
                 # The reference ELF was booted during start(), so this simply
                 # calls its compiled BLE dispatcher for BLE_GAP_EVT_CONNECTED.
@@ -363,7 +379,7 @@ class Nrf51Sdk11BumblePeripheral:
     ) -> None:
         if self._connection is None:
             self._on_connection(connection)
-        if self._connection is connection and self._phase == "dfu":
+        if self._connection is connection and self._phase == "second_stage":
             self.bootloader_runtime.set_control_point_notifications(notify_enabled)
 
     async def _on_control_point_write(self, connection: Connection, payload: bytes) -> None:
@@ -386,7 +402,7 @@ class Nrf51Sdk11BumblePeripheral:
         async with lock:
             if self._connection is None:
                 self._on_connection(connection)
-            if self._connection is not connection or self._phase != "dfu":
+            if self._connection is not connection or self._phase != "second_stage":
                 self._raise_att_error()
 
             try:
@@ -396,13 +412,13 @@ class Nrf51Sdk11BumblePeripheral:
                     else self.bootloader_runtime.write_packet,
                     bytes(payload),
                 )
-            except (Nrf51Sdk11RuntimeError, ValueError):
+            except (SecondStageFirmwareError, ValueError):
                 self._raise_att_error()
                 return
 
             await self._send_notifications(result.notifications)
 
-            if control_point and payload[:1] == bytes((DfuOpcode.ACTIVATE_AND_RESET,)):
+            if control_point and payload[:1] == bytes((_OPCODE_ACTIVATE_AND_RESET,)):
                 image = result.activated_image
                 if image is not None:
                     await self._run_application(image)
@@ -499,7 +515,7 @@ class Nrf51Sdk11BumblePeripheral:
                 self._application_reset_task = None
 
     async def _replace_with_application_device(self) -> None:
-        """Model reset by replacing the DFU controller and attribute table."""
+        """Model reset by replacing the controller and its attribute table."""
 
         try:
             from bumble.core import AdvertisingData, UUID
@@ -593,9 +609,9 @@ class Nrf51Sdk11BumblePeripheral:
 
 
 class MaintenanceApplicationBumblePeripheral:
-    """Initial non-DFU board service backed by a compiled Thumb application.
+    """Initial board service backed by a compiled Thumb application.
 
-    This service intentionally has no Nordic DFU UUID.  Its only writable
+    The second stage is not reachable from here.  Its only writable
     characteristic asks the normal application to enter maintenance boot
     mode.  The authorization routine itself is executed in Qiling by
     :class:`MaintenanceFirmwareRuntime`; this class only owns HCI/GATT and the
@@ -858,25 +874,24 @@ class MaintenanceApplicationBumblePeripheral:
                 self._disconnect_task = None
 
 
-class LayeredNrf51BumblePeripheral:
-    """Expose an ordinary application first, then the real legacy DFU target.
+class BoardBumblePeripheral:
+    """Expose the ordinary application first, then the second-stage target.
 
     A successful app-controlled GPREGRET request tears down its target-side
     HCI controller and starts a fresh controller with the same BLE address.
     This gives a player the normal disconnect/reconnect boundary of a board
-    reset and prevents discovery of Nordic's ``1530`` service beforehand.
+    reset and keeps the second-stage service undiscoverable beforehand.
     """
 
     def __init__(
         self,
         maintenance_runtime: MaintenanceFirmwareRuntime,
-        bootloader_runtime: Nrf51Sdk11BootloaderRuntime,
+        bootloader_runtime: SecondStageFirmwareRuntime,
         application_runtime: ApplicationRuntime,
         *,
         application_base: int = 0x1B000,
         name: str = "HITCON Field Node",
         address: str = "F6:F7:F8:F9:FA:FB",
-        revision: int = 8,
     ) -> None:
         self.maintenance_runtime = maintenance_runtime
         self.bootloader_runtime = bootloader_runtime
@@ -884,24 +899,23 @@ class LayeredNrf51BumblePeripheral:
         self.application_base = application_base
         self.name = name
         self.address = address
-        self.revision = revision
         self._maintenance = MaintenanceApplicationBumblePeripheral(
             maintenance_runtime,
             name=name,
             address=address,
         )
-        self._dfu: Nrf51Sdk11BumblePeripheral | None = None
+        self._second_stage: SecondStageBumblePeripheral | None = None
         self._hci_transport: str | None = None
         self._handoff_task: asyncio.Task[None] | None = None
-        self._dfu_advertising_ready: asyncio.Event | None = None
+        self._second_stage_advertising_ready: asyncio.Event | None = None
         self._stopping = False
         self._phase = "maintenance"
         self._handoff_error: Exception | None = None
 
     @property
     def device(self) -> Device | None:
-        if self._dfu is not None:
-            return self._dfu.device
+        if self._second_stage is not None:
+            return self._second_stage.device
         return self._maintenance.device
 
     @property
@@ -914,14 +928,14 @@ class LayeredNrf51BumblePeripheral:
         self._stopping = False
         self._phase = "maintenance"
         self._handoff_error = None
-        self._dfu_advertising_ready = asyncio.Event()
+        self._second_stage_advertising_ready = asyncio.Event()
         self._hci_transport = hci_transport
         try:
             await self._maintenance.start(hci_transport)
-            self._handoff_task = asyncio.create_task(self._handoff_to_legacy_dfu())
+            self._handoff_task = asyncio.create_task(self._hand_off_to_second_stage())
         except BaseException:
             self._hci_transport = None
-            self._dfu_advertising_ready = None
+            self._second_stage_advertising_ready = None
             raise
 
     async def stop(self) -> None:
@@ -932,17 +946,17 @@ class LayeredNrf51BumblePeripheral:
             with suppress(asyncio.CancelledError):
                 await handoff_task
         self._handoff_task = None
-        if self._dfu is not None:
-            await self._dfu.stop()
-            self._dfu = None
+        if self._second_stage is not None:
+            await self._second_stage.stop()
+            self._second_stage = None
         await self._maintenance.stop()
         self._hci_transport = None
-        self._dfu_advertising_ready = None
+        self._second_stage_advertising_ready = None
 
-    async def wait_for_dfu_advertising(self, timeout: float | None = None) -> None:
-        """Wait for the post-reset legacy DFU service to be advertised."""
+    async def wait_for_second_stage_advertising(self, timeout: float | None = None) -> None:
+        """Wait for the post-reset service to be advertised."""
 
-        event = self._dfu_advertising_ready
+        event = self._second_stage_advertising_ready
         if event is None:
             raise RuntimeError("peripheral is not running")
         if timeout is None:
@@ -950,9 +964,9 @@ class LayeredNrf51BumblePeripheral:
         else:
             await asyncio.wait_for(event.wait(), timeout)
         if self._handoff_error is not None:
-            raise RuntimeError("maintenance-to-DFU handoff failed") from self._handoff_error
+            raise RuntimeError("second-stage handoff failed") from self._handoff_error
 
-    async def _handoff_to_legacy_dfu(self) -> None:
+    async def _hand_off_to_second_stage(self) -> None:
         try:
             await self._maintenance.wait_for_bootloader_request()
             await self._maintenance.wait_for_handoff()
@@ -965,18 +979,17 @@ class LayeredNrf51BumblePeripheral:
             hci_transport = self._hci_transport
             if hci_transport is None:
                 return
-            dfu = Nrf51Sdk11BumblePeripheral(
+            second_stage = SecondStageBumblePeripheral(
                 self.bootloader_runtime,
                 self.application_runtime,
                 application_base=self.application_base,
                 name=self.name,
                 address=self.address,
-                revision=self.revision,
             )
-            self._dfu = dfu
-            await dfu.start(hci_transport)
-            self._phase = "dfu"
-            ready = self._dfu_advertising_ready
+            self._second_stage = second_stage
+            await second_stage.start(hci_transport)
+            self._phase = "second_stage"
+            ready = self._second_stage_advertising_ready
             if ready is not None:
                 ready.set()
         except asyncio.CancelledError:
@@ -984,7 +997,7 @@ class LayeredNrf51BumblePeripheral:
         except Exception as exc:
             self._handoff_error = exc
             self._phase = "handoff-failed"
-            ready = self._dfu_advertising_ready
+            ready = self._second_stage_advertising_ready
             if ready is not None:
                 ready.set()
         finally:

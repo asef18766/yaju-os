@@ -7,13 +7,32 @@ from enum import Enum, IntEnum
 import struct
 
 from .crc import crc16_ccitt
-from .gatt_ids import DfuOpcode
 
 
-# Only this Python model ever exposes 1533.  The compiled SDK 11 bootloader
-# answers on the control point itself, so the firmware-backed runtime never
-# registers a separate status characteristic.
-STATUS_REPORT_UUID = "00001533-1212-efde-1523-785feabcd123"
+# Nordic's legacy DFU identifiers.  The firmware-backed runtime reads these
+# from the image that registers them, so they live here for the Python model,
+# the reference client and the organizer tests only.  1533 never reaches the
+# wire at all: the compiled bootloader answers on its control point.
+_BASE_UUID = "0000xxxx-1212-efde-1523-785feabcd123"
+SERVICE_UUID = _BASE_UUID.replace("xxxx", "1530")
+CONTROL_POINT_UUID = _BASE_UUID.replace("xxxx", "1531")
+PACKET_UUID = _BASE_UUID.replace("xxxx", "1532")
+STATUS_REPORT_UUID = _BASE_UUID.replace("xxxx", "1533")
+REVISION_UUID = _BASE_UUID.replace("xxxx", "1534")
+
+
+class DfuOpcode(IntEnum):
+    """Legacy BLE DFU control-point operations."""
+
+    START_DFU = 0x01
+    INITIALIZE_DFU_PARAMETERS = 0x02
+    RECEIVE_FIRMWARE_IMAGE = 0x03
+    VALIDATE_FIRMWARE = 0x04
+    ACTIVATE_AND_RESET = 0x05
+    SYSTEM_RESET = 0x06
+    PACKET_RECEIPT_NOTIFICATION_REQUEST = 0x08
+    RESPONSE_CODE = 0x10
+    PACKET_RECEIPT_NOTIFICATION = 0x11
 
 
 class DfuImageType(IntEnum):

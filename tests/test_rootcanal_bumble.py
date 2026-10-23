@@ -23,24 +23,24 @@ from field_node.payloads import (
     make_gpio_probe_payload,
 )
 from field_node.gatt_ids import (
-    CONTROL_POINT_UUID,
     INMU_KING_FRAME_UUID,
     INMU_KING_SERVICE_UUID,
     MAINTENANCE_CONTROL_UUID,
     MAINTENANCE_SERVICE_UUID,
-    PACKET_UUID,
-    SERVICE_UUID,
-    DfuOpcode,
 )
 from field_node.protocol import (
+    CONTROL_POINT_UUID,
+    PACKET_UUID,
+    SERVICE_UUID,
     STATUS_REPORT_UUID,
     DfuImageType,
+    DfuOpcode,
     DfuResponse,
     LegacyInitPacket,
 )
 
 
-MAINTENANCE_REFERENCE_ELF = MaintenanceFirmwareRuntime.repository_reference_elf()
+MAINTENANCE_REFERENCE_ELF = MaintenanceFirmwareRuntime.repository_board_runtime()
 VALID_MAINTENANCE_REQUEST = bytes.fromhex("11451419198100")
 
 
@@ -104,12 +104,12 @@ class RootcanalBumbleIntegrationTests(unittest.IsolatedAsyncioTestCase):
         "optional Qiling dependency is not installed",
     )
     async def test_real_hci_gatt_upload_reaches_qiling_gpio_peripheral(self) -> None:
-        from field_node.nrf51_sdk11_runtime import Nrf51Sdk11BootloaderRuntime
+        from field_node.second_stage_runtime import SecondStageFirmwareRuntime
         from field_node.qiling_runtime import QilingRuntime
 
         config = BootloaderConfig.nrf51_sdk11_pca10028_s130()
-        reference_elf = Nrf51Sdk11BootloaderRuntime.repository_reference_elf()
-        if not reference_elf.is_file():
+        reference_elf = SecondStageFirmwareRuntime.repository_board_runtime()
+        if not reference_elf.exists():
             self.skipTest("built nRF51 SDK 11 reference ELF is unavailable")
         secret = b"CTF{gpio_dump_read_32_bytes!!!!}"
         image = make_gpio_dump_payload(len(secret), application_base=config.application_base)
@@ -120,7 +120,7 @@ class RootcanalBumbleIntegrationTests(unittest.IsolatedAsyncioTestCase):
             sram_size=config.sram_size,
             instruction_budget=100,
         )
-        with Nrf51Sdk11BootloaderRuntime(reference_elf) as reference_runtime:
+        with SecondStageFirmwareRuntime(reference_elf) as reference_runtime:
             bootloader = await self._upload_image_over_rootcanal(
                 image,
                 runtime,
@@ -145,12 +145,12 @@ class RootcanalBumbleIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_real_hci_gatt_drives_compiled_sdk11_dfu_under_qiling(self) -> None:
         """Run Rootcanal ATT writes through the real SDK 11 event dispatcher."""
 
-        from field_node.nrf51_sdk11_runtime import Nrf51Sdk11BootloaderRuntime
+        from field_node.second_stage_runtime import SecondStageFirmwareRuntime
         from field_node.qiling_runtime import QilingRuntime
 
         config = BootloaderConfig.nrf51_sdk11_pca10028_s130()
-        reference_elf = Nrf51Sdk11BootloaderRuntime.repository_reference_elf()
-        if not reference_elf.is_file():
+        reference_elf = SecondStageFirmwareRuntime.repository_board_runtime()
+        if not reference_elf.exists():
             self.skipTest("built nRF51 SDK 11 reference ELF is unavailable")
         secret = b"CTF{gpio_dump_read_32_bytes!!!!}"
         image = make_gpio_dump_payload(len(secret), application_base=config.application_base)
@@ -161,7 +161,7 @@ class RootcanalBumbleIntegrationTests(unittest.IsolatedAsyncioTestCase):
             sram_size=config.sram_size,
             instruction_budget=100,
         )
-        with Nrf51Sdk11BootloaderRuntime(reference_elf) as compiled_runtime:
+        with SecondStageFirmwareRuntime(reference_elf) as compiled_runtime:
             result = await self._upload_image_over_rootcanal(
                 image,
                 runtime,
@@ -182,7 +182,7 @@ class RootcanalBumbleIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(runtime.last_result.fault)
 
     @unittest.skipUnless(
-        importlib.util.find_spec("qiling") is not None and MAINTENANCE_REFERENCE_ELF.is_file(),
+        importlib.util.find_spec("qiling") is not None and MAINTENANCE_REFERENCE_ELF.exists(),
         "Qiling or the built maintenance application ELF is unavailable",
     )
     async def test_normal_application_hides_dfu_until_its_firmware_requests_boot_mode(self) -> None:
@@ -192,13 +192,13 @@ class RootcanalBumbleIntegrationTests(unittest.IsolatedAsyncioTestCase):
         from bumble.device import Device, Peer
         from bumble.hci import Address
         from bumble.transport import open_transport
-        from field_node.nrf51_sdk11_runtime import Nrf51Sdk11BootloaderRuntime
-        from field_node.qiling_rootcanal import LayeredNrf51BumblePeripheral
+        from field_node.second_stage_runtime import SecondStageFirmwareRuntime
+        from field_node.qiling_rootcanal import BoardBumblePeripheral
         from field_node.qiling_runtime import QilingRuntime
         from rootcanal.binaries import get_package_binary_resource_path
 
-        reference_elf = Nrf51Sdk11BootloaderRuntime.repository_reference_elf()
-        if not reference_elf.is_file():
+        reference_elf = SecondStageFirmwareRuntime.repository_board_runtime()
+        if not reference_elf.exists():
             self.skipTest("built nRF51 SDK 11 reference ELF is unavailable")
         hci_port, test_port, link_port, link_ble_port = (_unused_tcp_port() for _ in range(4))
         rootcanal_binary = Path(get_package_binary_resource_path("rootcanal"))
@@ -230,8 +230,8 @@ class RootcanalBumbleIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 await _wait_for_rootcanal(rootcanal, hci_port)
                 config = BootloaderConfig.nrf51_sdk11_pca10028_s130()
                 maintenance_runtime = MaintenanceFirmwareRuntime(MAINTENANCE_REFERENCE_ELF)
-                compiled_runtime = Nrf51Sdk11BootloaderRuntime(reference_elf)
-                target = LayeredNrf51BumblePeripheral(
+                compiled_runtime = SecondStageFirmwareRuntime(reference_elf)
+                target = BoardBumblePeripheral(
                     maintenance_runtime,
                     compiled_runtime,
                     QilingRuntime(
@@ -288,8 +288,8 @@ class RootcanalBumbleIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 )[0]
                 await initial_peer.write_value(control, VALID_MAINTENANCE_REQUEST, with_response=True)
                 await asyncio.wait_for(initial_disconnect.wait(), timeout=5)
-                await target.wait_for_dfu_advertising(timeout=15)
-                self.assertEqual(target.phase, "dfu")
+                await target.wait_for_second_stage_advertising(timeout=15)
+                self.assertEqual(target.phase, "second_stage")
 
                 assert target.device is not None
                 dfu_connection = await self._connect_after_reset(
@@ -379,11 +379,11 @@ class RootcanalBumbleIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     )
                     peripheral = LegacyDfuBumblePeripheral(LegacyDfuGattBridge(bootloader))
                 else:
-                    from field_node.qiling_rootcanal import Nrf51Sdk11BumblePeripheral
+                    from field_node.qiling_rootcanal import SecondStageBumblePeripheral
 
                     target_config = config or BootloaderConfig.nrf51_sdk11_pca10028_s130()
                     bootloader = compiled_bootloader_runtime
-                    peripheral = Nrf51Sdk11BumblePeripheral(
+                    peripheral = SecondStageBumblePeripheral(
                         compiled_bootloader_runtime,
                         runtime,
                         application_base=target_config.application_base,

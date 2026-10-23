@@ -16,28 +16,31 @@ FLASH_SIZE = 0x0004_0000
 APPLICATION_BASE = 0x0001_B000
 BOOTLOADER_BASE = 0x0003_C000
 FORMAT_NAME = "hitcon-nrf51-board-runtime"
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 
+# The emitted metadata is keyed by the role the runtime needs, not by the
+# symbol name the toolchain happens to have produced.  The handout therefore
+# carries an ABI index rather than a map of the firmware's internals.
 PHASE_SYMBOLS = {
-    "maintenance": (
-        "Reset_Handler",
-        "application_init",
-        "application_ble_evt",
-        "maintenance_command",
-    ),
-    "bootloader": (
-        "Reset_Handler",
-        "dfu_init_prevalidate",
-        "dfu_init_postvalidate",
-        "ble_evt_dispatch",
-        "pstorage_sys_event_handler",
-        "app_timer_start",
-        "app_timer_stop",
-        "m_dfu",
-        "m_dfu_state",
-        "m_image_size",
-        "m_cmd_queue",
-    ),
+    "maintenance": {
+        "reset_handler": "Reset_Handler",
+        "service_init": "application_init",
+        "ble_event_dispatch": "application_ble_evt",
+        "command_handler": "maintenance_command",
+    },
+    "bootloader": {
+        "reset_handler": "Reset_Handler",
+        "prevalidate_metadata": "dfu_init_prevalidate",
+        "postvalidate_image": "dfu_init_postvalidate",
+        "ble_event_dispatch": "ble_evt_dispatch",
+        "storage_event_handler": "pstorage_sys_event_handler",
+        "timer_start": "app_timer_start",
+        "timer_stop": "app_timer_stop",
+        "service_state": "m_dfu",
+        "transfer_state": "m_dfu_state",
+        "image_size": "m_image_size",
+        "command_queue": "m_cmd_queue",
+    },
 }
 
 
@@ -86,15 +89,13 @@ def read_phase(phase_name: str, elf_path: Path, flash: bytes) -> dict[str, objec
         symbol_rows.append((fields[0], fields[1], address))
 
     symbols_by_name = {name: address for name, _kind, address in symbol_rows}
-    missing = [name for name in PHASE_SYMBOLS[phase_name] if name not in symbols_by_name]
+    roles = PHASE_SYMBOLS[phase_name]
+    missing = [name for name in roles.values() if name not in symbols_by_name]
     if missing:
         raise RuntimeError(
             f"{phase_name} ELF lacks required runtime symbols: {', '.join(missing)}"
         )
-    symbols = {
-        name: symbols_by_name[name]
-        for name in PHASE_SYMBOLS[phase_name]
-    }
+    symbols = {role: symbols_by_name[name] for role, name in roles.items()}
 
     svc_addresses: dict[str, int] = {}
     for symbol_name, kind, raw_address in symbol_rows:

@@ -12,7 +12,7 @@ from pathlib import Path
 from field_node.board_runtime import BoardRuntimeArtifact
 from field_node.inmu_king_art import INMU_KING_DANCE_FRAMES, INMU_KING_DANCE_LABELS
 from field_node.session_host import (
-    LegacyDfuSessionHost,
+    BoardSessionHost,
     SessionHostConfig,
     _default_rootcanal_binary,
 )
@@ -47,7 +47,7 @@ class SessionHostIntegrationTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.NamedTemporaryFile() as secret_file:
             secret_file.write(b"CTF{animation_preview_test}")
             secret_file.flush()
-            host = LegacyDfuSessionHost(
+            host = BoardSessionHost(
                 SessionHostConfig(
                     listen_host="127.0.0.1",
                     listen_port=0,
@@ -96,7 +96,7 @@ class SessionHostIntegrationTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.NamedTemporaryFile() as secret_file:
             secret_file.write(b"CTF{session_host_test_flag}")
             secret_file.flush()
-            host = LegacyDfuSessionHost(
+            host = BoardSessionHost(
                 SessionHostConfig(
                     listen_host="127.0.0.1",
                     listen_port=0,
@@ -142,12 +142,12 @@ class SessionHostIntegrationTests(unittest.IsolatedAsyncioTestCase):
         from bumble.hci import Address
         from bumble.transport import open_transport
 
-        from field_node.gatt_ids import SERVICE_UUID
+        from field_node.protocol import SERVICE_UUID
 
         with tempfile.NamedTemporaryFile() as secret_file:
             secret_file.write(b"CTF{session_host_gatt_test_flag}")
             secret_file.flush()
-            host = LegacyDfuSessionHost(
+            host = BoardSessionHost(
                 SessionHostConfig(
                     listen_host="127.0.0.1",
                     listen_port=0,

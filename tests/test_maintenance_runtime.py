@@ -3,26 +3,25 @@ from __future__ import annotations
 import importlib.util
 import unittest
 
+from field_node.board_runtime import BoardRuntimeArtifact
 from field_node.inmu_king_art import INMU_KING_DANCE_FRAMES
 from field_node.maintenance_runtime import MaintenanceFirmwareRuntime
 from field_node.gatt_ids import INMU_KING_FRAME_UUID, INMU_KING_SERVICE_UUID
 
 
-REFERENCE_ELF = MaintenanceFirmwareRuntime.repository_reference_elf()
+REFERENCE_ELF = MaintenanceFirmwareRuntime.repository_board_runtime()
 # Deliberately only a test fixture: players receive the binary artifact and
 # derive this normal maintenance request by reversing its Thumb handler.
 VALID_MAINTENANCE_REQUEST = bytes.fromhex("11451419198100")
 
 
 @unittest.skipUnless(
-    importlib.util.find_spec("qiling") is not None and REFERENCE_ELF.is_file(),
+    importlib.util.find_spec("qiling") is not None and REFERENCE_ELF.exists(),
     "Qiling or the built maintenance application ELF is unavailable",
 )
 class MaintenanceFirmwareRuntimeTests(unittest.TestCase):
     def test_board_flash_contains_animation_gatts_calls_and_art(self) -> None:
-        board_flash = REFERENCE_ELF.with_suffix(".bin")
-        self.assertTrue(board_flash.is_file())
-        image = board_flash.read_bytes()
+        image = BoardRuntimeArtifact.load(REFERENCE_ELF).flash
         # S130 stores the shared vendor base little-endian and receives the
         # service/characteristic 16-bit portions through its GATTS structs.
         self.assertIn(bytes.fromhex("6d8bd5c186a72c948d4c5d7c00001c5a"), image)

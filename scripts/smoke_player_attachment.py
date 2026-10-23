@@ -22,9 +22,11 @@ from bumble.hci import Address
 from bumble.transport import open_transport
 
 from field_node.gatt_ids import (
-    CONTROL_POINT_UUID,
     MAINTENANCE_CONTROL_UUID,
     MAINTENANCE_SERVICE_UUID,
+)
+from field_node.protocol import (
+    CONTROL_POINT_UUID,
     PACKET_UUID,
     SERVICE_UUID,
     DfuOpcode,

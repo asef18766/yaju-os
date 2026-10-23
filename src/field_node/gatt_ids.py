@@ -1,13 +1,8 @@
-"""Wire identifiers shared by the firmware-backed BLE runtime and clients."""
+"""Vendor identifiers the board runtime and the player probe share.
 
-from enum import IntEnum
-
-
-_BASE_UUID = "0000xxxx-1212-efde-1523-785feabcd123"
-SERVICE_UUID = _BASE_UUID.replace("xxxx", "1530")
-CONTROL_POINT_UUID = _BASE_UUID.replace("xxxx", "1531")
-PACKET_UUID = _BASE_UUID.replace("xxxx", "1532")
-REVISION_UUID = _BASE_UUID.replace("xxxx", "1534")
+The second-stage firmware registers its own service through S130, so the host
+learns those identifiers from the image rather than from this module.
+"""
 
 MAINTENANCE_SERVICE_UUID = "5a1c0001-7c5d-4c8d-942c-a786c1d58b6d"
 MAINTENANCE_CONTROL_UUID = "5a1c0002-7c5d-4c8d-942c-a786c1d58b6d"
@@ -15,17 +10,3 @@ MAINTENANCE_INFO_UUID = "5a1c0003-7c5d-4c8d-942c-a786c1d58b6d"
 
 INMU_KING_SERVICE_UUID = "5a1c1001-7c5d-4c8d-942c-a786c1d58b6d"
 INMU_KING_FRAME_UUID = "5a1c1002-7c5d-4c8d-942c-a786c1d58b6d"
-
-
-class DfuOpcode(IntEnum):
-    """Legacy BLE DFU control-point operations."""
-
-    START_DFU = 0x01
-    INITIALIZE_DFU_PARAMETERS = 0x02
-    RECEIVE_FIRMWARE_IMAGE = 0x03
-    VALIDATE_FIRMWARE = 0x04
-    ACTIVATE_AND_RESET = 0x05
-    SYSTEM_RESET = 0x06
-    PACKET_RECEIPT_NOTIFICATION_REQUEST = 0x08
-    RESPONSE_CODE = 0x10
-    PACKET_RECEIPT_NOTIFICATION = 0x11

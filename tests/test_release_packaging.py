@@ -22,10 +22,11 @@ RELEASE_RUNTIME_FILES = {
     "src/field_node/gatt_ids.py",
     "src/field_node/hardware.py",
     "src/field_node/maintenance_runtime.py",
-    "src/field_node/nrf51_sdk11_runtime.py",
+    "src/field_node/second_stage_runtime.py",
     "src/field_node/qiling_rootcanal.py",
     "src/field_node/qiling_runtime.py",
     "src/field_node/runner.py",
+    "src/field_node/s130_abi.py",
     "src/field_node/s130_gatt.py",
     "src/field_node/session_host.py",
 }

@@ -14,13 +14,13 @@ from field_node.gatt_ids import (
     MAINTENANCE_SERVICE_UUID,
 )
 
-MAINTENANCE_REFERENCE_ELF = MaintenanceFirmwareRuntime.repository_reference_elf()
+MAINTENANCE_REFERENCE_ELF = MaintenanceFirmwareRuntime.repository_board_runtime()
 
 
 @unittest.skipUnless(
     importlib.util.find_spec("bumble") is not None
     and importlib.util.find_spec("qiling") is not None
-    and MAINTENANCE_REFERENCE_ELF.is_file(),
+    and MAINTENANCE_REFERENCE_ELF.exists(),
     "Bumble, Qiling, or the built maintenance application ELF is unavailable",
 )
 class InmuKingGattTests(unittest.IsolatedAsyncioTestCase):

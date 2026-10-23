@@ -8,15 +8,13 @@ from field_node.bridge import GattStateError, LegacyDfuGattBridge
 from field_node.client import DfuClientError, LegacyDfuClient
 from field_node.crc import crc16_ccitt
 from field_node.payloads import make_gpio_probe_payload
-from field_node.gatt_ids import (
+from field_node.protocol import (
     CONTROL_POINT_UUID,
     PACKET_UUID,
     SERVICE_UUID,
-    DfuOpcode,
-)
-from field_node.protocol import (
     STATUS_REPORT_UUID,
     DfuImageType,
+    DfuOpcode,
     DfuResponse,
     DfuState,
     LegacyInitPacket,

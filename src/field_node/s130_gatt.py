@@ -16,11 +16,8 @@ from bumble.device import Device
 from bumble.gatt import Characteristic, Service
 from bumble.gatt_server import Server
 
-from .maintenance_runtime import (
-    FirmwareGattCharacteristic,
-    FirmwareGattReadReply,
-    FirmwareGattService,
-)
+from .maintenance_runtime import FirmwareGattReadReply
+from .s130_abi import FirmwareGattCharacteristic, FirmwareGattService
 
 
 class S130GattFirmware(Protocol):

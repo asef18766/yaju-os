@@ -12,8 +12,8 @@ from typing import Sequence
 from .board_runtime import BoardRuntimeArtifact
 from .hardware import NRF51_SRAM_BASE, NRF51_SRAM_SIZE
 from .maintenance_runtime import MaintenanceFirmwareRuntime
-from .nrf51_sdk11_runtime import Nrf51Sdk11BootloaderRuntime
-from .qiling_rootcanal import LayeredNrf51BumblePeripheral
+from .second_stage_runtime import SecondStageFirmwareRuntime
+from .qiling_rootcanal import BoardBumblePeripheral
 from .qiling_runtime import QilingRuntime
 
 
@@ -71,9 +71,9 @@ async def serve(args: argparse.Namespace) -> None:
         sram_size=NRF51_SRAM_SIZE,
         instruction_budget=args.instruction_budget,
     )
-    reference_runtime = Nrf51Sdk11BootloaderRuntime.from_board_runtime(args.board_runtime)
+    reference_runtime = SecondStageFirmwareRuntime.from_board_runtime(args.board_runtime)
     maintenance_runtime = MaintenanceFirmwareRuntime.from_board_runtime(args.board_runtime)
-    peripheral = LayeredNrf51BumblePeripheral(
+    peripheral = BoardBumblePeripheral(
         maintenance_runtime,
         reference_runtime,
         runtime,

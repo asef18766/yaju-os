@@ -85,7 +85,7 @@ class _TargetSession:
         return self.ports[0]
 
 
-class LegacyDfuSessionHost:
+class BoardSessionHost:
     """Expose isolated Rootcanal + board-image Qiling targets over one port.
 
     A TCP connection is the unit of isolation.  It owns exactly one Rootcanal
@@ -474,7 +474,7 @@ async def serve(args: argparse.Namespace) -> None:
         shutdown_timeout=args.shutdown_timeout,
         instruction_budget=args.instruction_budget,
     )
-    host = LegacyDfuSessionHost(config)
+    host = BoardSessionHost(config)
     await host.start()
     stopped = asyncio.Event()
     loop = asyncio.get_running_loop()
