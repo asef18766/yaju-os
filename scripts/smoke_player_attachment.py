@@ -13,6 +13,7 @@ import argparse
 import asyncio
 from binascii import crc_hqx
 from contextlib import suppress
+from enum import IntEnum
 import struct
 import time
 
@@ -21,16 +22,28 @@ from bumble.device import Device, Peer
 from bumble.hci import Address
 from bumble.transport import open_transport
 
-from field_node.gatt_ids import (
-    MAINTENANCE_CONTROL_UUID,
-    MAINTENANCE_SERVICE_UUID,
-)
-from field_node.protocol import (
-    CONTROL_POINT_UUID,
-    PACKET_UUID,
-    SERVICE_UUID,
-    DfuOpcode,
-)
+
+# This client stands in for a player's own exploit, so it imports nothing from
+# the challenge package: every identifier below is one a player recovers by
+# reversing the board image, and none of them ships in the attachment.
+MAINTENANCE_SERVICE_UUID = "5a1c0001-7c5d-4c8d-942c-a786c1d58b6d"
+MAINTENANCE_CONTROL_UUID = "5a1c0002-7c5d-4c8d-942c-a786c1d58b6d"
+
+SERVICE_UUID = "00001530-1212-efde-1523-785feabcd123"
+CONTROL_POINT_UUID = "00001531-1212-efde-1523-785feabcd123"
+PACKET_UUID = "00001532-1212-efde-1523-785feabcd123"
+
+
+class DfuOpcode(IntEnum):
+    """Legacy BLE DFU control-point operations."""
+
+    START_DFU = 0x01
+    INITIALIZE_DFU_PARAMETERS = 0x02
+    RECEIVE_FIRMWARE_IMAGE = 0x03
+    VALIDATE_FIRMWARE = 0x04
+    ACTIVATE_AND_RESET = 0x05
+    PACKET_RECEIPT_NOTIFICATION_REQUEST = 0x08
+    RESPONSE_CODE = 0x10
 
 
 TARGET_ADDRESS = Address("F6:F7:F8:F9:FA:FB")
