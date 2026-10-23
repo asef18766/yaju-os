@@ -24,7 +24,6 @@ DEFAULT_SOURCE_DATE_EPOCH = 315532800  # 1980-01-01, ZIP's earliest date.
 ATTACHMENT_STATIC_FILES = (
     ("packaging/attachment/.dockerignore", ".dockerignore"),
     ("packaging/attachment/Dockerfile", "Dockerfile"),
-    ("packaging/attachment/README.md", "README.md"),
     ("packaging/attachment/compose.yaml", "compose.yaml"),
     ("packaging/attachment/local_flag.txt", "local_flag.txt"),
     ("packaging/attachment/probe.py", "probe.py"),

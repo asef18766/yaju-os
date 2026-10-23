@@ -103,7 +103,6 @@ class ReleasePackagingTests(unittest.TestCase):
                     ".dockerignore",
                     "BUILD_INFO",
                     "Dockerfile",
-                    "README.md",
                     "SHA256SUMS",
                     "artifacts/board_runtime/board_flash.bin",
                     "artifacts/board_runtime/runtime_symbols.json",
@@ -144,6 +143,7 @@ class ReleasePackagingTests(unittest.TestCase):
                     self.assertNotIn("vendor", path.parts)
                     self.assertNotIn("__pycache__", path.parts)
                     self.assertNotIn("workspace", path.parts)
+                self.assertNotIn("README.md", names)
                 self.assertNotIn("src/yaju_os/payloads.py", names)
                 self.assertNotIn("src/yaju_os/inmu_king_art.py", names)
                 self.assertNotIn("maintenance_application.bin", names)
