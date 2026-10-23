@@ -9,3 +9,4 @@ vendor/
 artifacts/
 flag.txt
 .env
+uv.lock
