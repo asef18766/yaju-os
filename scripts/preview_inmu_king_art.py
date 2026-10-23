@@ -24,12 +24,12 @@ SOURCE_ROOT = REPOSITORY_ROOT / "src"
 if str(SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_ROOT))
 
-from hitcon_legacy_dfu.inmu_king_art import (
+from field_node.inmu_king_art import (
     INMU_KING_DANCE_FRAMES,
     INMU_KING_DANCE_LABELS,
     PREVIEW_FPS,
 )
-from hitcon_legacy_dfu.protocol import INMU_KING_FRAME_UUID, INMU_KING_SERVICE_UUID
+from field_node.gatt_ids import INMU_KING_FRAME_UUID, INMU_KING_SERVICE_UUID
 
 
 def positive_float(value: str) -> float:

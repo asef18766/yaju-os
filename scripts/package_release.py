@@ -16,9 +16,9 @@ import zipfile
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-ATTACHMENT_ARCHIVE = "hitcon-legacy-dfu-attachment.zip"
-SERVICE_ARCHIVE = "hitcon-legacy-dfu-service.zip"
-SERVICE_DIRECTORY = "hitcon-legacy-dfu-service"
+ATTACHMENT_ARCHIVE = "field-node-attachment.zip"
+SERVICE_ARCHIVE = "field-node-service.zip"
+SERVICE_DIRECTORY = "field-node-service"
 DEFAULT_SOURCE_DATE_EPOCH = 315532800  # 1980-01-01, ZIP's earliest date.
 
 ATTACHMENT_STATIC_FILES = (
@@ -27,7 +27,7 @@ ATTACHMENT_STATIC_FILES = (
     ("packaging/attachment/README.md", "README.md"),
     ("packaging/attachment/compose.yaml", "compose.yaml"),
     ("packaging/attachment/local_flag.txt", "local_flag.txt"),
-    ("packaging/attachment/probe.py", "workspace/probe.py"),
+    ("packaging/attachment/probe.py", "probe.py"),
     ("pyproject.toml", "pyproject.toml"),
 )
 
@@ -35,19 +35,18 @@ ATTACHMENT_STATIC_FILES = (
 # DFU models, clients, payload generators, offline art, and organizer helpers
 # remain in the repository for development/tests but are not deployed.
 RELEASE_RUNTIME_FILES = (
-    "src/hitcon_legacy_dfu/__init__.py",
-    "src/hitcon_legacy_dfu/board_runtime.py",
-    "src/hitcon_legacy_dfu/gatt_ids.py",
-    "src/hitcon_legacy_dfu/hardware.py",
-    "src/hitcon_legacy_dfu/maintenance_runtime.py",
-    "src/hitcon_legacy_dfu/nrf51_sdk11_runtime.py",
-    "src/hitcon_legacy_dfu/qiling_rootcanal.py",
-    "src/hitcon_legacy_dfu/qiling_runtime.py",
-    "src/hitcon_legacy_dfu/runner.py",
-    "src/hitcon_legacy_dfu/s130_gatt.py",
-    "src/hitcon_legacy_dfu/session_host.py",
+    "src/field_node/__init__.py",
+    "src/field_node/board_runtime.py",
+    "src/field_node/gatt_ids.py",
+    "src/field_node/hardware.py",
+    "src/field_node/maintenance_runtime.py",
+    "src/field_node/nrf51_sdk11_runtime.py",
+    "src/field_node/qiling_rootcanal.py",
+    "src/field_node/qiling_runtime.py",
+    "src/field_node/runner.py",
+    "src/field_node/s130_gatt.py",
+    "src/field_node/session_host.py",
 )
-ATTACHMENT_RUNTIME_FILES = RELEASE_RUNTIME_FILES
 
 SERVICE_FILES = (
     ".dockerignore",
@@ -162,7 +161,7 @@ def attachment_entries(
         archive_path: read_source(source_path)
         for source_path, archive_path in ATTACHMENT_STATIC_FILES
     }
-    entries.update({path: read_source(path) for path in ATTACHMENT_RUNTIME_FILES})
+    entries.update({path: read_source(path) for path in RELEASE_RUNTIME_FILES})
     entries.update(
         {
             "BUILD_INFO": ArchiveEntry(

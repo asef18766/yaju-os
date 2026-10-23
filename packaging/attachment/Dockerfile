@@ -24,5 +24,5 @@ USER player
 
 EXPOSE 6402/tcp
 
-ENTRYPOINT ["hitcon-legacy-dfu-host"]
+ENTRYPOINT ["field-node-host"]
 CMD ["--secret-file", "/run/secrets/local_flag", "--listen-host", "0.0.0.0", "--listen-port", "6402", "--max-sessions", "2", "--board-runtime", "/opt/hitcon/artifacts/board_runtime"]

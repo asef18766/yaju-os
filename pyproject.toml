@@ -3,14 +3,14 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "hitcon-legacy-dfu"
-version = "0.1.5"
+name = "field-node"
+version = "0.1.6"
 description = "A testable Nordic legacy BLE DFU CTF target"
 requires-python = ">=3.12"
 
 [project.scripts]
-hitcon-legacy-dfu = "hitcon_legacy_dfu.runner:main"
-hitcon-legacy-dfu-host = "hitcon_legacy_dfu.session_host:main"
+field-node = "field_node.runner:main"
+field-node-host = "field_node.session_host:main"
 
 [project.optional-dependencies]
 emulator = [

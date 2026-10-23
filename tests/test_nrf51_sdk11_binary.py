@@ -4,15 +4,15 @@ import importlib.util
 import struct
 import unittest
 
-from hitcon_legacy_dfu.bootloader import BootloaderConfig, LegacyDfuBootloader
-from hitcon_legacy_dfu.bridge import LegacyDfuGattBridge
-from hitcon_legacy_dfu.client import LegacyDfuClient
-from hitcon_legacy_dfu.nrf51_sdk11_runtime import (
+from field_node.bootloader import BootloaderConfig, LegacyDfuBootloader
+from field_node.bridge import LegacyDfuGattBridge
+from field_node.client import LegacyDfuClient
+from field_node.nrf51_sdk11_runtime import (
     NRF_SUCCESS,
     Nrf51Sdk11BootloaderRuntime,
 )
-from hitcon_legacy_dfu.payloads import make_gpio_probe_payload
-from hitcon_legacy_dfu.protocol import LegacyInitPacket
+from field_node.payloads import make_gpio_probe_payload
+from field_node.protocol import LegacyInitPacket
 
 
 REFERENCE_ELF = Nrf51Sdk11BootloaderRuntime.repository_reference_elf()

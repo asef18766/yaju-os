@@ -58,5 +58,5 @@ USER ctf
 
 EXPOSE 6402/tcp
 
-ENTRYPOINT ["hitcon-legacy-dfu-host"]
+ENTRYPOINT ["field-node-host"]
 CMD ["--secret-file", "/run/secrets/flag", "--listen-host", "0.0.0.0", "--listen-port", "6402", "--board-runtime", "/app/artifacts/board_runtime"]

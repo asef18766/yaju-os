@@ -1,4 +1,4 @@
-# HITCON legacy DFU service deployment
+# HITCON Field Node service deployment
 
 This directory is a self-contained Docker Compose build context. It does not
 contain a real challenge flag.

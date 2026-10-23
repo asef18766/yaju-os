@@ -62,14 +62,50 @@ def _fix_att_mtu_to_s130(device: "Device") -> None:
     device.gatt_server.max_mtu = _S130_ATT_MTU
 
 
+def _restart_advertising(
+    device: "Device | None",
+    advertising_data: bytes | None,
+    scan_response_data: bytes | None,
+) -> None:
+    """Advertise again after a disconnect, exactly as the board does.
+
+    Both the SDK 11 bootloader and an ordinary nRF51 application call
+    ``advertising_start`` from their ``BLE_GAP_EVT_DISCONNECTED`` handler, so a
+    central may connect, drop the link, and come back.  Centrals rely on it:
+    nRF Connect for Android closes its own GATT connection before handing the
+    device to its DFU service.
+    """
+
+    if device is None or advertising_data is None or scan_response_data is None:
+        return
+
+    async def restart() -> None:
+        with suppress(Exception):
+            await device.start_advertising(
+                auto_restart=False,
+                advertising_data=advertising_data,
+                scan_response_data=scan_response_data,
+            )
+
+    asyncio.create_task(restart())
+
+
 class BumbleUnavailable(RuntimeError):
     """The optional Bumble/Rootcanal transport dependencies are unavailable."""
+
+
+class ApplicationExecution(Protocol):
+    """What one post-reset player image left behind: its GATT registrations."""
+
+    gatt_services: tuple[FirmwareGattService, ...]
 
 
 class ApplicationRuntime(Protocol):
     """The post-reset execution boundary used by the CTF board."""
 
-    def run_application(self, image: bytes, application_base: int) -> object: ...
+    def run_application(
+        self, image: bytes, application_base: int
+    ) -> ApplicationExecution: ...
 
 
 class Nrf51Sdk11BumblePeripheral:
@@ -118,19 +154,12 @@ class Nrf51Sdk11BumblePeripheral:
         self._application_advertising_ready: asyncio.Event | None = None
         self._phase = "dfu"
         self._application_services: tuple[FirmwareGattService, ...] = ()
-        self._application_fault: str | None = None
 
     @property
     def connected(self) -> bool:
         """Whether a central currently owns the target connection."""
 
         return self._connection is not None
-
-    @property
-    def application_fault(self) -> str | None:
-        """A malformed player image must not terminate the BLE target process."""
-
-        return self._application_fault
 
     async def start(self, hci_transport: str) -> None:
         """Boot the ELF, attach target HCI, and begin real BLE advertising."""
@@ -162,7 +191,6 @@ class Nrf51Sdk11BumblePeripheral:
         self._hci_transport = hci_transport
         self._phase = "dfu"
         self._application_services = ()
-        self._application_fault = None
         transport = await open_transport(hci_transport)
         try:
             device = Device.with_hci(
@@ -323,33 +351,9 @@ class Nrf51Sdk11BumblePeripheral:
         if self._application_reset_task is None:
             # A reset owns advertising itself; any other disconnect is the
             # ordinary one the board survives.
-            self._restart_advertising()
-
-    def _restart_advertising(self) -> None:
-        """Advertise again after a disconnect, exactly as the board does.
-
-        Both the SDK 11 bootloader and an ordinary nRF51 application call
-        ``advertising_start`` from their ``BLE_GAP_EVT_DISCONNECTED`` handler,
-        so a central may connect, drop the link, and come back.  Centrals rely
-        on it: nRF Connect for Android closes its own GATT connection before
-        handing the device to its DFU service.
-        """
-
-        device = self.device
-        advertising_data = self._advertising_data
-        scan_response_data = self._scan_response_data
-        if device is None or advertising_data is None or scan_response_data is None:
-            return
-
-        async def restart() -> None:
-            with suppress(Exception):
-                await device.start_advertising(
-                    auto_restart=False,
-                    advertising_data=advertising_data,
-                    scan_response_data=scan_response_data,
-                )
-
-        asyncio.create_task(restart())
+            _restart_advertising(
+                self.device, self._advertising_data, self._scan_response_data
+            )
 
     def _on_control_point_subscription(
         self,
@@ -433,21 +437,14 @@ class Nrf51Sdk11BumblePeripheral:
                 image,
                 self.application_base,
             )
-        except Exception as exc:
-            self._application_fault = f"{type(exc).__name__}: {exc}"
+            services = tuple(execution.gatt_services)
+            self._validate_application_services(services)
+        except Exception:
+            # A malformed player image must not terminate the BLE target, and
+            # leaves the reset controller with an empty attribute table.
             self._application_services = ()
             return
-
-        try:
-            services = getattr(execution, "gatt_services", ())
-            normalized = tuple(services) if services is not None else ()
-            self._validate_application_services(normalized)
-        except Exception as exc:
-            self._application_services = ()
-            self._application_fault = f"{type(exc).__name__}: {exc}"
-            return
-        self._application_services = normalized
-        self._application_fault = getattr(execution, "fault", None)
+        self._application_services = services
 
     @staticmethod
     def _validate_application_services(
@@ -811,26 +808,11 @@ class MaintenanceApplicationBumblePeripheral:
             if requested is None or not requested.is_set():
                 # Only an accepted maintenance request retires this controller;
                 # a plain disconnect leaves the application advertising.
-                self._restart_advertising()
-
-    def _restart_advertising(self) -> None:
-        """Advertise again after a disconnect the application survives."""
-
-        device = self.device
-        advertising_data = self._advertising_data
-        scan_response_data = self._scan_response_data
-        if device is None or advertising_data is None or scan_response_data is None:
-            return
-
-        async def restart() -> None:
-            with suppress(Exception):
-                await device.start_advertising(
-                    auto_restart=False,
-                    advertising_data=advertising_data,
-                    scan_response_data=scan_response_data,
+                _restart_advertising(
+                    self.device,
+                    self._advertising_data,
+                    self._scan_response_data,
                 )
-
-        asyncio.create_task(restart())
 
     async def _on_control_write(self, connection: Connection, payload: bytes) -> None:
         lock = self._write_lock
@@ -925,10 +907,6 @@ class LayeredNrf51BumblePeripheral:
     @property
     def phase(self) -> str:
         return self._phase
-
-    @property
-    def handoff_error(self) -> Exception | None:
-        return self._handoff_error
 
     async def start(self, hci_transport: str) -> None:
         if self._hci_transport is not None:

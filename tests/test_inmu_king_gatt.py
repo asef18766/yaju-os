@@ -4,9 +4,9 @@ import asyncio
 import importlib.util
 import unittest
 
-from hitcon_legacy_dfu.inmu_king_art import INMU_KING_DANCE_FRAMES
-from hitcon_legacy_dfu.maintenance_runtime import MaintenanceFirmwareRuntime
-from hitcon_legacy_dfu.protocol import (
+from field_node.inmu_king_art import INMU_KING_DANCE_FRAMES
+from field_node.maintenance_runtime import MaintenanceFirmwareRuntime
+from field_node.gatt_ids import (
     INMU_KING_FRAME_UUID,
     INMU_KING_SERVICE_UUID,
     MAINTENANCE_CONTROL_UUID,
@@ -32,7 +32,7 @@ class InmuKingGattTests(unittest.IsolatedAsyncioTestCase):
         from bumble.gatt import Characteristic, CharacteristicValue, Service
         from bumble.hci import Address
         from bumble.link import LocalLink
-        from hitcon_legacy_dfu.s130_gatt import S130GattServer
+        from field_node.s130_gatt import S130GattServer
 
         asyncio.get_running_loop().slow_callback_duration = 1.0
         link = LocalLink()

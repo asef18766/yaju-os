@@ -1,6 +1,6 @@
 services:
   host:
-    image: hitcon-legacy-dfu-local:latest
+    image: field-node-local:latest
     platform: linux/amd64
     build:
       context: .
@@ -14,15 +14,15 @@ services:
       - /tmp:rw,nosuid,nodev,size=64m
 
   tools:
-    image: hitcon-legacy-dfu-local:latest
+    image: field-node-local:latest
     platform: linux/amd64
     profiles:
       - tools
     entrypoint:
       - python
-    working_dir: /workspace
+    working_dir: /lab
     volumes:
-      - ./workspace:/workspace:ro
+      - .:/lab:ro
     depends_on:
       - host
 

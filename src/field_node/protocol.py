@@ -7,20 +7,13 @@ from enum import Enum, IntEnum
 import struct
 
 from .crc import crc16_ccitt
-from .gatt_ids import (
-    CONTROL_POINT_UUID,
-    INMU_KING_FRAME_UUID,
-    INMU_KING_SERVICE_UUID,
-    LEGACY_DFU_BASE_UUID,
-    MAINTENANCE_CONTROL_UUID,
-    MAINTENANCE_INFO_UUID,
-    MAINTENANCE_SERVICE_UUID,
-    PACKET_UUID,
-    REVISION_UUID,
-    SERVICE_UUID,
-    STATUS_REPORT_UUID,
-    DfuOpcode,
-)
+from .gatt_ids import DfuOpcode
+
+
+# Only this Python model ever exposes 1533.  The compiled SDK 11 bootloader
+# answers on the control point itself, so the firmware-backed runtime never
+# registers a separate status characteristic.
+STATUS_REPORT_UUID = "00001533-1212-efde-1523-785feabcd123"
 
 
 class DfuImageType(IntEnum):

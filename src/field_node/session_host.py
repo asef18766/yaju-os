@@ -1,4 +1,4 @@
-"""One-connection-per-target TCP host for the legacy-DFU challenge.
+"""One-connection-per-target TCP host for the challenge board.
 
 The public socket is an HCI/H4 TCP socket.  On every accepted player
 connection this host creates an isolated Rootcanal instance and an isolated
@@ -89,7 +89,7 @@ class LegacyDfuSessionHost:
     """Expose isolated Rootcanal + board-image Qiling targets over one port.
 
     A TCP connection is the unit of isolation.  It owns exactly one Rootcanal
-    process and one ``hitcon_legacy_dfu.runner`` process.  Closing that player
+    process and one ``field_node.runner`` process.  Closing that player
     connection terminates both children, so no team can observe another
     team's virtual radio or Qiling memory.
     """
@@ -131,7 +131,7 @@ class LegacyDfuSessionHost:
             limit=_COPY_BUFFER_SIZE,
         )
         LOGGER.info(
-            "legacy DFU session host listening on %s:%d (max %d sessions)",
+            "session host listening on %s:%d (max %d sessions)",
             self.config.listen_host,
             self.listen_port,
             self.config.max_sessions,
@@ -178,7 +178,7 @@ class LegacyDfuSessionHost:
             self._connection_tasks.add(task)
         try:
             if self._stopping:
-                LOGGER.warning("rejecting player: legacy DFU session host is stopping")
+                LOGGER.warning("rejecting player: session host is stopping")
                 return
 
             # Keep a connected player queued during another session's short
@@ -253,7 +253,7 @@ class LegacyDfuSessionHost:
             target_arguments = [
                 sys.executable,
                 "-m",
-                "hitcon_legacy_dfu.runner",
+                "field_node.runner",
                 "--secret-file",
                 str(self.config.secret_file),
                 "--hci-transport",
@@ -433,7 +433,7 @@ def _default_rootcanal_binary() -> Path:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Create one isolated Rootcanal + Qiling legacy-DFU target for every incoming HCI/TCP connection."
+            "Create one isolated Rootcanal + Qiling board target per incoming HCI/TCP connection."
         )
     )
     parser.add_argument("--secret-file", type=Path, required=True)

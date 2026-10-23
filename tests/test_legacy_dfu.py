@@ -3,18 +3,20 @@ from __future__ import annotations
 import struct
 import unittest
 
-from hitcon_legacy_dfu.bootloader import BootloaderConfig, LegacyDfuBootloader
-from hitcon_legacy_dfu.bridge import GattStateError, LegacyDfuGattBridge
-from hitcon_legacy_dfu.client import DfuClientError, LegacyDfuClient
-from hitcon_legacy_dfu.crc import crc16_ccitt
-from hitcon_legacy_dfu.payloads import make_gpio_probe_payload
-from hitcon_legacy_dfu.protocol import (
+from field_node.bootloader import BootloaderConfig, LegacyDfuBootloader
+from field_node.bridge import GattStateError, LegacyDfuGattBridge
+from field_node.client import DfuClientError, LegacyDfuClient
+from field_node.crc import crc16_ccitt
+from field_node.payloads import make_gpio_probe_payload
+from field_node.gatt_ids import (
     CONTROL_POINT_UUID,
     PACKET_UUID,
     SERVICE_UUID,
+    DfuOpcode,
+)
+from field_node.protocol import (
     STATUS_REPORT_UUID,
     DfuImageType,
-    DfuOpcode,
     DfuResponse,
     DfuState,
     LegacyInitPacket,

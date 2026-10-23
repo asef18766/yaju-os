@@ -10,14 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .bootloader import LegacyDfuBootloader
-from .protocol import (
-    CONTROL_POINT_UUID,
-    PACKET_UUID,
-    REVISION_UUID,
-    SERVICE_UUID,
-    STATUS_REPORT_UUID,
-    DfuNotification,
-)
+from .gatt_ids import CONTROL_POINT_UUID, PACKET_UUID, REVISION_UUID, SERVICE_UUID
+from .protocol import STATUS_REPORT_UUID, DfuNotification
 
 
 class GattStateError(RuntimeError):

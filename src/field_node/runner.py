@@ -1,4 +1,4 @@
-"""Command-line runner for one legacy-DFU challenge target instance."""
+"""Command-line runner for one challenge board instance."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from .qiling_runtime import QilingRuntime
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Expose a legacy Nordic DFU CTF target through a Rootcanal HCI TCP port."
+        description="Expose one emulated nRF51 board through a Rootcanal HCI TCP port."
     )
     parser.add_argument(
         "--secret-file",
@@ -89,9 +89,8 @@ async def serve(args: argparse.Namespace) -> None:
 
     try:
         await peripheral.start(args.hci_transport)
-        phase = getattr(peripheral, "phase", "dfu")
         print(
-            f"challenge target is advertising through {args.hci_transport} (phase={phase})",
+            f"challenge target is advertising through {args.hci_transport}",
             flush=True,
         )
         await stopped.wait()

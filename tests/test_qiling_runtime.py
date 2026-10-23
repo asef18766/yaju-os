@@ -3,10 +3,10 @@ from __future__ import annotations
 import importlib.util
 import unittest
 
-from hitcon_legacy_dfu.bootloader import BootloaderConfig, LegacyDfuBootloader
-from hitcon_legacy_dfu.bridge import LegacyDfuGattBridge
-from hitcon_legacy_dfu.client import LegacyDfuClient
-from hitcon_legacy_dfu.payloads import (
+from field_node.bootloader import BootloaderConfig, LegacyDfuBootloader
+from field_node.bridge import LegacyDfuGattBridge
+from field_node.client import LegacyDfuClient
+from field_node.payloads import (
     TEST_APPLICATION_SERVICE_UUID,
     TEST_APPLICATION_VALUE_UUID,
     make_gpio_dump_payload,
@@ -17,7 +17,7 @@ from hitcon_legacy_dfu.payloads import (
 @unittest.skipUnless(importlib.util.find_spec("qiling") is not None, "optional Qiling dependency is not installed")
 class QilingRuntimeTests(unittest.TestCase):
     def test_uploaded_thumb_payload_reads_gpio_and_registers_gatt(self) -> None:
-        from hitcon_legacy_dfu.qiling_runtime import QilingRuntime
+        from field_node.qiling_runtime import QilingRuntime
 
         secret = b"CTF{legacy_dfu_gpio}"
         runtime = QilingRuntime(secret, instruction_budget=100)
@@ -39,7 +39,7 @@ class QilingRuntimeTests(unittest.TestCase):
         self.assertIsNone(runtime.last_result.fault)
 
     def test_uploaded_thumb_payload_can_publish_multiple_gpio_words(self) -> None:
-        from hitcon_legacy_dfu.qiling_runtime import QilingRuntime
+        from field_node.qiling_runtime import QilingRuntime
 
         secret = b"CTF{gpio_dump_read_32_bytes!!!!}"
         runtime = QilingRuntime(secret, instruction_budget=100)
@@ -58,7 +58,7 @@ class QilingRuntimeTests(unittest.TestCase):
         self.assertIsNone(runtime.last_result.fault)
 
     def test_nrf51_sdk11_profile_runs_a_word_aligned_uploaded_payload(self) -> None:
-        from hitcon_legacy_dfu.qiling_runtime import QilingRuntime
+        from field_node.qiling_runtime import QilingRuntime
 
         config = BootloaderConfig.nrf51_sdk11_pca10028_s130()
         secret = b"0123456789abcdef0123456789abcdef"

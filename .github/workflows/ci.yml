@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CI_IMAGE: hitcon-legacy-dfu:ci
+  CI_IMAGE: field-node:ci
 
 jobs:
   build-test-package:
@@ -70,10 +70,10 @@ jobs:
         run: |
           mkdir -p build/archive-smoke/attachment build/archive-smoke/service
           python3 -m zipfile -e \
-            dist/hitcon-legacy-dfu-attachment.zip \
+            dist/field-node-attachment.zip \
             build/archive-smoke/attachment
           python3 -m zipfile -e \
-            dist/hitcon-legacy-dfu-service.zip \
+            dist/field-node-service.zip \
             build/archive-smoke/service
           cmp \
             build/ci-handout/board_flash.bin \
@@ -83,14 +83,14 @@ jobs:
             build/archive-smoke/attachment/artifacts/board_runtime/runtime_symbols.json
           test ! -e build/archive-smoke/attachment/maintenance_application.bin
           (cd build/archive-smoke/attachment && sha256sum --check SHA256SUMS)
-          (cd build/archive-smoke/service/hitcon-legacy-dfu-service && sha256sum --check SHA256SUMS)
+          (cd build/archive-smoke/service/field-node-service && sha256sum --check SHA256SUMS)
           (cd dist && sha256sum --check SHA256SUMS)
           docker compose \
-            --file build/archive-smoke/service/hitcon-legacy-dfu-service/compose.yaml \
+            --file build/archive-smoke/service/field-node-service/compose.yaml \
             config --quiet
           docker build \
-            --tag hitcon-legacy-dfu:archive-smoke \
-            build/archive-smoke/service/hitcon-legacy-dfu-service
+            --tag field-node:archive-smoke \
+            build/archive-smoke/service/field-node-service
 
       - name: Boot attachment lab and read GATT over Bluetooth
         working-directory: build/archive-smoke/attachment
@@ -124,7 +124,7 @@ jobs:
           # This solution-bearing smoke client is copied only after the ZIP's
           # manifest/scope checks and is never part of either release bundle.
           cp "${GITHUB_WORKSPACE}/scripts/smoke_player_attachment.py" \
-            workspace/organizer-smoke.py
+            organizer-smoke.py
           exploit_output=$(docker compose --project-name "${project}" run \
             --rm --no-deps tools organizer-smoke.py)
           printf '%s\n' "${exploit_output}"
@@ -135,10 +135,10 @@ jobs:
       - name: Upload release bundles
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: hitcon-legacy-dfu-${{ github.sha }}
+          name: field-node-${{ github.sha }}
           path: |
-            dist/hitcon-legacy-dfu-attachment.zip
-            dist/hitcon-legacy-dfu-service.zip
+            dist/field-node-attachment.zip
+            dist/field-node-service.zip
             dist/SHA256SUMS
           if-no-files-found: error
           compression-level: 0
@@ -156,7 +156,7 @@ jobs:
       - name: Download verified release bundles
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: hitcon-legacy-dfu-${{ github.sha }}
+          name: field-node-${{ github.sha }}
           path: release
 
       - name: Verify downloaded release bundles
@@ -170,15 +170,15 @@ jobs:
           if gh release view "${GITHUB_REF_NAME}" \
             --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
             gh release upload "${GITHUB_REF_NAME}" \
-              release/hitcon-legacy-dfu-attachment.zip \
-              release/hitcon-legacy-dfu-service.zip \
+              release/field-node-attachment.zip \
+              release/field-node-service.zip \
               release/SHA256SUMS \
               --repo "${GITHUB_REPOSITORY}" \
               --clobber
           else
             gh release create "${GITHUB_REF_NAME}" \
-              release/hitcon-legacy-dfu-attachment.zip \
-              release/hitcon-legacy-dfu-service.zip \
+              release/field-node-attachment.zip \
+              release/field-node-service.zip \
               release/SHA256SUMS \
               --repo "${GITHUB_REPOSITORY}" \
               --verify-tag \

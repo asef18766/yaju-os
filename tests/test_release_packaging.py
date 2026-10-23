@@ -13,21 +13,21 @@ import zipfile
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 PACKAGER = REPOSITORY_ROOT / "scripts" / "package_release.py"
-ATTACHMENT_ARCHIVE = "hitcon-legacy-dfu-attachment.zip"
-SERVICE_ARCHIVE = "hitcon-legacy-dfu-service.zip"
-SERVICE_DIRECTORY = "hitcon-legacy-dfu-service"
+ATTACHMENT_ARCHIVE = "field-node-attachment.zip"
+SERVICE_ARCHIVE = "field-node-service.zip"
+SERVICE_DIRECTORY = "field-node-service"
 RELEASE_RUNTIME_FILES = {
-    "src/hitcon_legacy_dfu/__init__.py",
-    "src/hitcon_legacy_dfu/board_runtime.py",
-    "src/hitcon_legacy_dfu/gatt_ids.py",
-    "src/hitcon_legacy_dfu/hardware.py",
-    "src/hitcon_legacy_dfu/maintenance_runtime.py",
-    "src/hitcon_legacy_dfu/nrf51_sdk11_runtime.py",
-    "src/hitcon_legacy_dfu/qiling_rootcanal.py",
-    "src/hitcon_legacy_dfu/qiling_runtime.py",
-    "src/hitcon_legacy_dfu/runner.py",
-    "src/hitcon_legacy_dfu/s130_gatt.py",
-    "src/hitcon_legacy_dfu/session_host.py",
+    "src/field_node/__init__.py",
+    "src/field_node/board_runtime.py",
+    "src/field_node/gatt_ids.py",
+    "src/field_node/hardware.py",
+    "src/field_node/maintenance_runtime.py",
+    "src/field_node/nrf51_sdk11_runtime.py",
+    "src/field_node/qiling_rootcanal.py",
+    "src/field_node/qiling_runtime.py",
+    "src/field_node/runner.py",
+    "src/field_node/s130_gatt.py",
+    "src/field_node/session_host.py",
 }
 
 
@@ -109,17 +109,17 @@ class ReleasePackagingTests(unittest.TestCase):
                     "compose.yaml",
                     "local_flag.txt",
                     "pyproject.toml",
-                    "src/hitcon_legacy_dfu/maintenance_runtime.py",
-                    "src/hitcon_legacy_dfu/qiling_runtime.py",
-                    "src/hitcon_legacy_dfu/session_host.py",
-                    "workspace/probe.py",
+                    "src/field_node/maintenance_runtime.py",
+                    "src/field_node/qiling_runtime.py",
+                    "src/field_node/session_host.py",
+                    "probe.py",
                 }
                 self.assertTrue(required.issubset(names))
                 self.assertEqual(
                     {
                         name
                         for name in names
-                        if name.startswith("src/hitcon_legacy_dfu/")
+                        if name.startswith("src/field_node/")
                     },
                     RELEASE_RUNTIME_FILES,
                 )
@@ -142,8 +142,9 @@ class ReleasePackagingTests(unittest.TestCase):
                     self.assertNotIn("firmware", path.parts)
                     self.assertNotIn("vendor", path.parts)
                     self.assertNotIn("__pycache__", path.parts)
-                self.assertNotIn("src/hitcon_legacy_dfu/payloads.py", names)
-                self.assertNotIn("src/hitcon_legacy_dfu/inmu_king_art.py", names)
+                    self.assertNotIn("workspace", path.parts)
+                self.assertNotIn("src/field_node/payloads.py", names)
+                self.assertNotIn("src/field_node/inmu_king_art.py", names)
                 self.assertNotIn("maintenance_application.bin", names)
                 self.assertEqual(
                     {name for name in names if name.endswith(".bin")},
@@ -175,15 +176,15 @@ class ReleasePackagingTests(unittest.TestCase):
                     f"{prefix}pyproject.toml",
                     f"{prefix}scripts/build_maintenance_application.sh",
                     f"{prefix}scripts/build_board_runtime.py",
-                    f"{prefix}src/hitcon_legacy_dfu/board_runtime.py",
-                    f"{prefix}src/hitcon_legacy_dfu/session_host.py",
+                    f"{prefix}src/field_node/board_runtime.py",
+                    f"{prefix}src/field_node/session_host.py",
                 }
                 self.assertTrue(required.issubset(names))
                 self.assertEqual(
                     {
                         name.removeprefix(prefix)
                         for name in names
-                        if name.startswith(f"{prefix}src/hitcon_legacy_dfu/")
+                        if name.startswith(f"{prefix}src/field_node/")
                     },
                     RELEASE_RUNTIME_FILES,
                 )

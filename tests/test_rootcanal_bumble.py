@@ -11,18 +11,18 @@ import time
 import unittest
 from pathlib import Path
 
-from hitcon_legacy_dfu.bootloader import BootloaderConfig, LegacyDfuBootloader
-from hitcon_legacy_dfu.bridge import LegacyDfuGattBridge
-from hitcon_legacy_dfu.bumble_adapter import LegacyDfuBumblePeripheral
-from hitcon_legacy_dfu.inmu_king_art import INMU_KING_DANCE_FRAMES
-from hitcon_legacy_dfu.maintenance_runtime import MaintenanceFirmwareRuntime
-from hitcon_legacy_dfu.payloads import (
+from field_node.bootloader import BootloaderConfig, LegacyDfuBootloader
+from field_node.bridge import LegacyDfuGattBridge
+from field_node.bumble_adapter import LegacyDfuBumblePeripheral
+from field_node.inmu_king_art import INMU_KING_DANCE_FRAMES
+from field_node.maintenance_runtime import MaintenanceFirmwareRuntime
+from field_node.payloads import (
     TEST_APPLICATION_SERVICE_UUID,
     TEST_APPLICATION_VALUE_UUID,
     make_gpio_dump_payload,
     make_gpio_probe_payload,
 )
-from hitcon_legacy_dfu.protocol import (
+from field_node.gatt_ids import (
     CONTROL_POINT_UUID,
     INMU_KING_FRAME_UUID,
     INMU_KING_SERVICE_UUID,
@@ -30,9 +30,11 @@ from hitcon_legacy_dfu.protocol import (
     MAINTENANCE_SERVICE_UUID,
     PACKET_UUID,
     SERVICE_UUID,
+    DfuOpcode,
+)
+from field_node.protocol import (
     STATUS_REPORT_UUID,
     DfuImageType,
-    DfuOpcode,
     DfuResponse,
     LegacyInitPacket,
 )
@@ -102,8 +104,8 @@ class RootcanalBumbleIntegrationTests(unittest.IsolatedAsyncioTestCase):
         "optional Qiling dependency is not installed",
     )
     async def test_real_hci_gatt_upload_reaches_qiling_gpio_peripheral(self) -> None:
-        from hitcon_legacy_dfu.nrf51_sdk11_runtime import Nrf51Sdk11BootloaderRuntime
-        from hitcon_legacy_dfu.qiling_runtime import QilingRuntime
+        from field_node.nrf51_sdk11_runtime import Nrf51Sdk11BootloaderRuntime
+        from field_node.qiling_runtime import QilingRuntime
 
         config = BootloaderConfig.nrf51_sdk11_pca10028_s130()
         reference_elf = Nrf51Sdk11BootloaderRuntime.repository_reference_elf()
@@ -143,8 +145,8 @@ class RootcanalBumbleIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_real_hci_gatt_drives_compiled_sdk11_dfu_under_qiling(self) -> None:
         """Run Rootcanal ATT writes through the real SDK 11 event dispatcher."""
 
-        from hitcon_legacy_dfu.nrf51_sdk11_runtime import Nrf51Sdk11BootloaderRuntime
-        from hitcon_legacy_dfu.qiling_runtime import QilingRuntime
+        from field_node.nrf51_sdk11_runtime import Nrf51Sdk11BootloaderRuntime
+        from field_node.qiling_runtime import QilingRuntime
 
         config = BootloaderConfig.nrf51_sdk11_pca10028_s130()
         reference_elf = Nrf51Sdk11BootloaderRuntime.repository_reference_elf()
@@ -190,9 +192,9 @@ class RootcanalBumbleIntegrationTests(unittest.IsolatedAsyncioTestCase):
         from bumble.device import Device, Peer
         from bumble.hci import Address
         from bumble.transport import open_transport
-        from hitcon_legacy_dfu.nrf51_sdk11_runtime import Nrf51Sdk11BootloaderRuntime
-        from hitcon_legacy_dfu.qiling_rootcanal import LayeredNrf51BumblePeripheral
-        from hitcon_legacy_dfu.qiling_runtime import QilingRuntime
+        from field_node.nrf51_sdk11_runtime import Nrf51Sdk11BootloaderRuntime
+        from field_node.qiling_rootcanal import LayeredNrf51BumblePeripheral
+        from field_node.qiling_runtime import QilingRuntime
         from rootcanal.binaries import get_package_binary_resource_path
 
         reference_elf = Nrf51Sdk11BootloaderRuntime.repository_reference_elf()
@@ -377,7 +379,7 @@ class RootcanalBumbleIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     )
                     peripheral = LegacyDfuBumblePeripheral(LegacyDfuGattBridge(bootloader))
                 else:
-                    from hitcon_legacy_dfu.qiling_rootcanal import Nrf51Sdk11BumblePeripheral
+                    from field_node.qiling_rootcanal import Nrf51Sdk11BumblePeripheral
 
                     target_config = config or BootloaderConfig.nrf51_sdk11_pca10028_s130()
                     bootloader = compiled_bootloader_runtime

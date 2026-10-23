@@ -2,7 +2,7 @@
 """Organizer-only end-to-end exploit smoke test for the extracted player lab.
 
 This file is intentionally excluded from both release ZIPs.  CI copies it into
-the already-verified attachment workspace, then proves that a player script can
+the already-verified extracted attachment, then proves that a player script can
 cross the maintenance gate, perform unsigned legacy DFU, execute Thumb code,
 register a new GATT service, and recover the local test flag through Rootcanal.
 """
@@ -21,7 +21,7 @@ from bumble.device import Device, Peer
 from bumble.hci import Address
 from bumble.transport import open_transport
 
-from hitcon_legacy_dfu.gatt_ids import (
+from field_node.gatt_ids import (
     CONTROL_POINT_UUID,
     MAINTENANCE_CONTROL_UUID,
     MAINTENANCE_SERVICE_UUID,

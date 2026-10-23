@@ -2,6 +2,6 @@ BUILD_INFO
 SHA256SUMS
 README.md
 local_flag.txt
-workspace
+probe.py
 **/__pycache__
 **/*.pyc
