@@ -16,9 +16,9 @@ import zipfile
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-ATTACHMENT_ARCHIVE = "field-node-attachment.zip"
-SERVICE_ARCHIVE = "field-node-service.zip"
-SERVICE_DIRECTORY = "field-node-service"
+ATTACHMENT_ARCHIVE = "yaju-os-attachment.zip"
+SERVICE_ARCHIVE = "yaju-os-service.zip"
+SERVICE_DIRECTORY = "yaju-os-service"
 DEFAULT_SOURCE_DATE_EPOCH = 315532800  # 1980-01-01, ZIP's earliest date.
 
 ATTACHMENT_STATIC_FILES = (
@@ -35,18 +35,18 @@ ATTACHMENT_STATIC_FILES = (
 # DFU models, clients, payload generators, offline art, and organizer helpers
 # remain in the repository for development/tests but are not deployed.
 RELEASE_RUNTIME_FILES = (
-    "src/field_node/__init__.py",
-    "src/field_node/board_runtime.py",
-    "src/field_node/gatt_ids.py",
-    "src/field_node/hardware.py",
-    "src/field_node/maintenance_runtime.py",
-    "src/field_node/second_stage_runtime.py",
-    "src/field_node/qiling_rootcanal.py",
-    "src/field_node/qiling_runtime.py",
-    "src/field_node/runner.py",
-    "src/field_node/s130_abi.py",
-    "src/field_node/s130_gatt.py",
-    "src/field_node/session_host.py",
+    "src/yaju_os/__init__.py",
+    "src/yaju_os/board_runtime.py",
+    "src/yaju_os/gatt_ids.py",
+    "src/yaju_os/hardware.py",
+    "src/yaju_os/maintenance_runtime.py",
+    "src/yaju_os/second_stage_runtime.py",
+    "src/yaju_os/qiling_rootcanal.py",
+    "src/yaju_os/qiling_runtime.py",
+    "src/yaju_os/runner.py",
+    "src/yaju_os/s130_abi.py",
+    "src/yaju_os/s130_gatt.py",
+    "src/yaju_os/session_host.py",
 )
 
 SERVICE_FILES = (

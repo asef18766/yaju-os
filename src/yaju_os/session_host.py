@@ -89,7 +89,7 @@ class BoardSessionHost:
     """Expose isolated Rootcanal + board-image Qiling targets over one port.
 
     A TCP connection is the unit of isolation.  It owns exactly one Rootcanal
-    process and one ``field_node.runner`` process.  Closing that player
+    process and one ``yaju_os.runner`` process.  Closing that player
     connection terminates both children, so no team can observe another
     team's virtual radio or Qiling memory.
     """
@@ -253,7 +253,7 @@ class BoardSessionHost:
             target_arguments = [
                 sys.executable,
                 "-m",
-                "field_node.runner",
+                "yaju_os.runner",
                 "--secret-file",
                 str(self.config.secret_file),
                 "--hci-transport",

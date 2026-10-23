@@ -1,6 +1,6 @@
 services:
   host:
-    image: field-node-local:latest
+    image: yaju-os-local:latest
     platform: linux/amd64
     build:
       context: .
@@ -14,7 +14,7 @@ services:
       - /tmp:rw,nosuid,nodev,size=64m
 
   tools:
-    image: field-node-local:latest
+    image: yaju-os-local:latest
     platform: linux/amd64
     profiles:
       - tools

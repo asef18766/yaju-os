@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CI_IMAGE: field-node:ci
+  CI_IMAGE: yaju-os:ci
 
 jobs:
   build-test-package:
@@ -70,10 +70,10 @@ jobs:
         run: |
           mkdir -p build/archive-smoke/attachment build/archive-smoke/service
           python3 -m zipfile -e \
-            dist/field-node-attachment.zip \
+            dist/yaju-os-attachment.zip \
             build/archive-smoke/attachment
           python3 -m zipfile -e \
-            dist/field-node-service.zip \
+            dist/yaju-os-service.zip \
             build/archive-smoke/service
           cmp \
             build/ci-handout/board_flash.bin \
@@ -83,14 +83,14 @@ jobs:
             build/archive-smoke/attachment/artifacts/board_runtime/runtime_symbols.json
           test ! -e build/archive-smoke/attachment/maintenance_application.bin
           (cd build/archive-smoke/attachment && sha256sum --check SHA256SUMS)
-          (cd build/archive-smoke/service/field-node-service && sha256sum --check SHA256SUMS)
+          (cd build/archive-smoke/service/yaju-os-service && sha256sum --check SHA256SUMS)
           (cd dist && sha256sum --check SHA256SUMS)
           docker compose \
-            --file build/archive-smoke/service/field-node-service/compose.yaml \
+            --file build/archive-smoke/service/yaju-os-service/compose.yaml \
             config --quiet
           docker build \
-            --tag field-node:archive-smoke \
-            build/archive-smoke/service/field-node-service
+            --tag yaju-os:archive-smoke \
+            build/archive-smoke/service/yaju-os-service
 
       - name: Boot attachment lab and read GATT over Bluetooth
         working-directory: build/archive-smoke/attachment
@@ -135,10 +135,10 @@ jobs:
       - name: Upload release bundles
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: field-node-${{ github.sha }}
+          name: yaju-os-${{ github.sha }}
           path: |
-            dist/field-node-attachment.zip
-            dist/field-node-service.zip
+            dist/yaju-os-attachment.zip
+            dist/yaju-os-service.zip
             dist/SHA256SUMS
           if-no-files-found: error
           compression-level: 0
@@ -156,7 +156,7 @@ jobs:
       - name: Download verified release bundles
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: field-node-${{ github.sha }}
+          name: yaju-os-${{ github.sha }}
           path: release
 
       - name: Verify downloaded release bundles
@@ -170,15 +170,15 @@ jobs:
           if gh release view "${GITHUB_REF_NAME}" \
             --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
             gh release upload "${GITHUB_REF_NAME}" \
-              release/field-node-attachment.zip \
-              release/field-node-service.zip \
+              release/yaju-os-attachment.zip \
+              release/yaju-os-service.zip \
               release/SHA256SUMS \
               --repo "${GITHUB_REPOSITORY}" \
               --clobber
           else
             gh release create "${GITHUB_REF_NAME}" \
-              release/field-node-attachment.zip \
-              release/field-node-service.zip \
+              release/yaju-os-attachment.zip \
+              release/yaju-os-service.zip \
               release/SHA256SUMS \
               --repo "${GITHUB_REPOSITORY}" \
               --verify-tag \

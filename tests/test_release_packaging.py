@@ -13,22 +13,22 @@ import zipfile
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 PACKAGER = REPOSITORY_ROOT / "scripts" / "package_release.py"
-ATTACHMENT_ARCHIVE = "field-node-attachment.zip"
-SERVICE_ARCHIVE = "field-node-service.zip"
-SERVICE_DIRECTORY = "field-node-service"
+ATTACHMENT_ARCHIVE = "yaju-os-attachment.zip"
+SERVICE_ARCHIVE = "yaju-os-service.zip"
+SERVICE_DIRECTORY = "yaju-os-service"
 RELEASE_RUNTIME_FILES = {
-    "src/field_node/__init__.py",
-    "src/field_node/board_runtime.py",
-    "src/field_node/gatt_ids.py",
-    "src/field_node/hardware.py",
-    "src/field_node/maintenance_runtime.py",
-    "src/field_node/second_stage_runtime.py",
-    "src/field_node/qiling_rootcanal.py",
-    "src/field_node/qiling_runtime.py",
-    "src/field_node/runner.py",
-    "src/field_node/s130_abi.py",
-    "src/field_node/s130_gatt.py",
-    "src/field_node/session_host.py",
+    "src/yaju_os/__init__.py",
+    "src/yaju_os/board_runtime.py",
+    "src/yaju_os/gatt_ids.py",
+    "src/yaju_os/hardware.py",
+    "src/yaju_os/maintenance_runtime.py",
+    "src/yaju_os/second_stage_runtime.py",
+    "src/yaju_os/qiling_rootcanal.py",
+    "src/yaju_os/qiling_runtime.py",
+    "src/yaju_os/runner.py",
+    "src/yaju_os/s130_abi.py",
+    "src/yaju_os/s130_gatt.py",
+    "src/yaju_os/session_host.py",
 }
 
 
@@ -110,9 +110,9 @@ class ReleasePackagingTests(unittest.TestCase):
                     "compose.yaml",
                     "local_flag.txt",
                     "pyproject.toml",
-                    "src/field_node/maintenance_runtime.py",
-                    "src/field_node/qiling_runtime.py",
-                    "src/field_node/session_host.py",
+                    "src/yaju_os/maintenance_runtime.py",
+                    "src/yaju_os/qiling_runtime.py",
+                    "src/yaju_os/session_host.py",
                     "probe.py",
                 }
                 self.assertTrue(required.issubset(names))
@@ -120,7 +120,7 @@ class ReleasePackagingTests(unittest.TestCase):
                     {
                         name
                         for name in names
-                        if name.startswith("src/field_node/")
+                        if name.startswith("src/yaju_os/")
                     },
                     RELEASE_RUNTIME_FILES,
                 )
@@ -144,8 +144,8 @@ class ReleasePackagingTests(unittest.TestCase):
                     self.assertNotIn("vendor", path.parts)
                     self.assertNotIn("__pycache__", path.parts)
                     self.assertNotIn("workspace", path.parts)
-                self.assertNotIn("src/field_node/payloads.py", names)
-                self.assertNotIn("src/field_node/inmu_king_art.py", names)
+                self.assertNotIn("src/yaju_os/payloads.py", names)
+                self.assertNotIn("src/yaju_os/inmu_king_art.py", names)
                 self.assertNotIn("maintenance_application.bin", names)
                 self.assertEqual(
                     {name for name in names if name.endswith(".bin")},
@@ -177,15 +177,15 @@ class ReleasePackagingTests(unittest.TestCase):
                     f"{prefix}pyproject.toml",
                     f"{prefix}scripts/build_maintenance_application.sh",
                     f"{prefix}scripts/build_board_runtime.py",
-                    f"{prefix}src/field_node/board_runtime.py",
-                    f"{prefix}src/field_node/session_host.py",
+                    f"{prefix}src/yaju_os/board_runtime.py",
+                    f"{prefix}src/yaju_os/session_host.py",
                 }
                 self.assertTrue(required.issubset(names))
                 self.assertEqual(
                     {
                         name.removeprefix(prefix)
                         for name in names
-                        if name.startswith(f"{prefix}src/field_node/")
+                        if name.startswith(f"{prefix}src/yaju_os/")
                     },
                     RELEASE_RUNTIME_FILES,
                 )

@@ -12,7 +12,7 @@ from bumble.device import Device, Peer
 from bumble.hci import Address
 from bumble.transport import open_transport
 
-from field_node.gatt_ids import INMU_KING_FRAME_UUID, INMU_KING_SERVICE_UUID
+from yaju_os.gatt_ids import INMU_KING_FRAME_UUID, INMU_KING_SERVICE_UUID
 
 
 def parse_args() -> argparse.Namespace:

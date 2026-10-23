@@ -24,12 +24,12 @@ SOURCE_ROOT = REPOSITORY_ROOT / "src"
 if str(SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_ROOT))
 
-from field_node.inmu_king_art import (
+from yaju_os.inmu_king_art import (
     INMU_KING_DANCE_FRAMES,
     INMU_KING_DANCE_LABELS,
     PREVIEW_FPS,
 )
-from field_node.gatt_ids import INMU_KING_FRAME_UUID, INMU_KING_SERVICE_UUID
+from yaju_os.gatt_ids import INMU_KING_FRAME_UUID, INMU_KING_SERVICE_UUID
 
 
 def positive_float(value: str) -> float:

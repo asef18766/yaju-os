@@ -4,15 +4,15 @@ import importlib.util
 import struct
 import unittest
 
-from field_node.bootloader import BootloaderConfig, LegacyDfuBootloader
-from field_node.bridge import LegacyDfuGattBridge
-from field_node.client import LegacyDfuClient
-from field_node.second_stage_runtime import (
+from yaju_os.bootloader import BootloaderConfig, LegacyDfuBootloader
+from yaju_os.bridge import LegacyDfuGattBridge
+from yaju_os.client import LegacyDfuClient
+from yaju_os.second_stage_runtime import (
     NRF_SUCCESS,
     SecondStageFirmwareRuntime,
 )
-from field_node.payloads import make_gpio_probe_payload
-from field_node.protocol import (
+from yaju_os.payloads import make_gpio_probe_payload
+from yaju_os.protocol import (
     CONTROL_POINT_UUID,
     PACKET_UUID,
     REVISION_UUID,

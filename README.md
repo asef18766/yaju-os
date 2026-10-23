@@ -151,7 +151,7 @@ python3 -m rootcanal \
 再開完整兩階段 target：
 
 ```bash
-field-node \
+yaju-os \
   --secret-file /run/secrets/team-01.flag \
   --hci-transport tcp-client:127.0.0.1:6402 \
   --board-runtime artifacts/board_runtime
@@ -178,11 +178,11 @@ service。
 GitHub Actions 會使用專案的 Dockerfile 建置正式映像、執行完整測試，接著產生一個 workflow
 artifact，其中固定包含：
 
-- `field-node-attachment.zip`：給參賽者的 Rootcanal/Qiling emulator harness、唯一的
+- `yaju-os-attachment.zip`：給參賽者的 Rootcanal/Qiling emulator harness、唯一的
   firmware blob `board_flash.bin`、`runtime_symbols.json`、Docker
   Compose local lab、公開 local test flag、GATT probe、build metadata 與 SHA-256 manifest；不含
   firmware source、organizer tests、已知 maintenance command 或 solution payload generator。
-- `field-node-service.zip`：可直接部署的 Docker Compose build context、部署說明與
+- `yaju-os-service.zip`：可直接部署的 Docker Compose build context、部署說明與
   SHA-256 manifest；`src/` 只含 production board runtime，不含 Python DFU model、client、payload
   helper 或離線動畫資料；只含 `flag.example`，不含真實 flag、SDK、cache、artifacts 或 tests。
 - `SHA256SUMS`：上述兩個 ZIP 自身的 checksum。

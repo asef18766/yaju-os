@@ -11,24 +11,24 @@ import time
 import unittest
 from pathlib import Path
 
-from field_node.bootloader import BootloaderConfig, LegacyDfuBootloader
-from field_node.bridge import LegacyDfuGattBridge
-from field_node.bumble_adapter import LegacyDfuBumblePeripheral
-from field_node.inmu_king_art import INMU_KING_DANCE_FRAMES
-from field_node.maintenance_runtime import MaintenanceFirmwareRuntime
-from field_node.payloads import (
+from yaju_os.bootloader import BootloaderConfig, LegacyDfuBootloader
+from yaju_os.bridge import LegacyDfuGattBridge
+from yaju_os.bumble_adapter import LegacyDfuBumblePeripheral
+from yaju_os.inmu_king_art import INMU_KING_DANCE_FRAMES
+from yaju_os.maintenance_runtime import MaintenanceFirmwareRuntime
+from yaju_os.payloads import (
     TEST_APPLICATION_SERVICE_UUID,
     TEST_APPLICATION_VALUE_UUID,
     make_gpio_dump_payload,
     make_gpio_probe_payload,
 )
-from field_node.gatt_ids import (
+from yaju_os.gatt_ids import (
     INMU_KING_FRAME_UUID,
     INMU_KING_SERVICE_UUID,
     MAINTENANCE_CONTROL_UUID,
     MAINTENANCE_SERVICE_UUID,
 )
-from field_node.protocol import (
+from yaju_os.protocol import (
     CONTROL_POINT_UUID,
     PACKET_UUID,
     SERVICE_UUID,
@@ -104,8 +104,8 @@ class RootcanalBumbleIntegrationTests(unittest.IsolatedAsyncioTestCase):
         "optional Qiling dependency is not installed",
     )
     async def test_real_hci_gatt_upload_reaches_qiling_gpio_peripheral(self) -> None:
-        from field_node.second_stage_runtime import SecondStageFirmwareRuntime
-        from field_node.qiling_runtime import QilingRuntime
+        from yaju_os.second_stage_runtime import SecondStageFirmwareRuntime
+        from yaju_os.qiling_runtime import QilingRuntime
 
         config = BootloaderConfig.nrf51_sdk11_pca10028_s130()
         reference_elf = SecondStageFirmwareRuntime.repository_board_runtime()
@@ -145,8 +145,8 @@ class RootcanalBumbleIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_real_hci_gatt_drives_compiled_sdk11_dfu_under_qiling(self) -> None:
         """Run Rootcanal ATT writes through the real SDK 11 event dispatcher."""
 
-        from field_node.second_stage_runtime import SecondStageFirmwareRuntime
-        from field_node.qiling_runtime import QilingRuntime
+        from yaju_os.second_stage_runtime import SecondStageFirmwareRuntime
+        from yaju_os.qiling_runtime import QilingRuntime
 
         config = BootloaderConfig.nrf51_sdk11_pca10028_s130()
         reference_elf = SecondStageFirmwareRuntime.repository_board_runtime()
@@ -192,9 +192,9 @@ class RootcanalBumbleIntegrationTests(unittest.IsolatedAsyncioTestCase):
         from bumble.device import Device, Peer
         from bumble.hci import Address
         from bumble.transport import open_transport
-        from field_node.second_stage_runtime import SecondStageFirmwareRuntime
-        from field_node.qiling_rootcanal import BoardBumblePeripheral
-        from field_node.qiling_runtime import QilingRuntime
+        from yaju_os.second_stage_runtime import SecondStageFirmwareRuntime
+        from yaju_os.qiling_rootcanal import BoardBumblePeripheral
+        from yaju_os.qiling_runtime import QilingRuntime
         from rootcanal.binaries import get_package_binary_resource_path
 
         reference_elf = SecondStageFirmwareRuntime.repository_board_runtime()
@@ -379,7 +379,7 @@ class RootcanalBumbleIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     )
                     peripheral = LegacyDfuBumblePeripheral(LegacyDfuGattBridge(bootloader))
                 else:
-                    from field_node.qiling_rootcanal import SecondStageBumblePeripheral
+                    from yaju_os.qiling_rootcanal import SecondStageBumblePeripheral
 
                     target_config = config or BootloaderConfig.nrf51_sdk11_pca10028_s130()
                     bootloader = compiled_bootloader_runtime

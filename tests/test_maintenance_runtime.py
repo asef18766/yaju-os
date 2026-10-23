@@ -3,10 +3,10 @@ from __future__ import annotations
 import importlib.util
 import unittest
 
-from field_node.board_runtime import BoardRuntimeArtifact
-from field_node.inmu_king_art import INMU_KING_DANCE_FRAMES
-from field_node.maintenance_runtime import MaintenanceFirmwareRuntime
-from field_node.gatt_ids import INMU_KING_FRAME_UUID, INMU_KING_SERVICE_UUID
+from yaju_os.board_runtime import BoardRuntimeArtifact
+from yaju_os.inmu_king_art import INMU_KING_DANCE_FRAMES
+from yaju_os.maintenance_runtime import MaintenanceFirmwareRuntime
+from yaju_os.gatt_ids import INMU_KING_FRAME_UUID, INMU_KING_SERVICE_UUID
 
 
 REFERENCE_ELF = MaintenanceFirmwareRuntime.repository_board_runtime()

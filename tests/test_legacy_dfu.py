@@ -3,12 +3,12 @@ from __future__ import annotations
 import struct
 import unittest
 
-from field_node.bootloader import BootloaderConfig, LegacyDfuBootloader
-from field_node.bridge import GattStateError, LegacyDfuGattBridge
-from field_node.client import DfuClientError, LegacyDfuClient
-from field_node.crc import crc16_ccitt
-from field_node.payloads import make_gpio_probe_payload
-from field_node.protocol import (
+from yaju_os.bootloader import BootloaderConfig, LegacyDfuBootloader
+from yaju_os.bridge import GattStateError, LegacyDfuGattBridge
+from yaju_os.client import DfuClientError, LegacyDfuClient
+from yaju_os.crc import crc16_ccitt
+from yaju_os.payloads import make_gpio_probe_payload
+from yaju_os.protocol import (
     CONTROL_POINT_UUID,
     PACKET_UUID,
     SERVICE_UUID,

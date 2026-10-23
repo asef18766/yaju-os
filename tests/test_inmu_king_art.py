@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from field_node.inmu_king_art import (
+from yaju_os.inmu_king_art import (
     FRAME_HEIGHT,
     FRAME_WIDTH,
     INMU_KING_DANCE_FRAMES,

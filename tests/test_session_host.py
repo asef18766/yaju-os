@@ -9,9 +9,9 @@ import time
 import unittest
 from pathlib import Path
 
-from field_node.board_runtime import BoardRuntimeArtifact
-from field_node.inmu_king_art import INMU_KING_DANCE_FRAMES, INMU_KING_DANCE_LABELS
-from field_node.session_host import (
+from yaju_os.board_runtime import BoardRuntimeArtifact
+from yaju_os.inmu_king_art import INMU_KING_DANCE_FRAMES, INMU_KING_DANCE_LABELS
+from yaju_os.session_host import (
     BoardSessionHost,
     SessionHostConfig,
     _default_rootcanal_binary,
@@ -142,7 +142,7 @@ class SessionHostIntegrationTests(unittest.IsolatedAsyncioTestCase):
         from bumble.hci import Address
         from bumble.transport import open_transport
 
-        from field_node.protocol import SERVICE_UUID
+        from yaju_os.protocol import SERVICE_UUID
 
         with tempfile.NamedTemporaryFile() as secret_file:
             secret_file.write(b"CTF{session_host_gatt_test_flag}")
@@ -182,7 +182,7 @@ class SessionHostIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     lambda *_args: disconnected.set(),
                 )
                 peer = Peer(initial_connection)
-                from field_node.gatt_ids import (
+                from yaju_os.gatt_ids import (
                     MAINTENANCE_CONTROL_UUID,
                     MAINTENANCE_SERVICE_UUID,
                 )

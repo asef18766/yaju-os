@@ -3,14 +3,14 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "field-node"
-version = "0.1.9"
+name = "yaju-os"
+version = "0.1.10"
 description = "A testable emulated nRF51 BLE challenge target"
 requires-python = ">=3.12"
 
 [project.scripts]
-field-node = "field_node.runner:main"
-field-node-host = "field_node.session_host:main"
+yaju-os = "yaju_os.runner:main"
+yaju-os-host = "yaju_os.session_host:main"
 
 [project.optional-dependencies]
 emulator = [

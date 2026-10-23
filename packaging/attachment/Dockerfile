@@ -24,5 +24,5 @@ USER player
 
 EXPOSE 6402/tcp
 
-ENTRYPOINT ["field-node-host"]
+ENTRYPOINT ["yaju-os-host"]
 CMD ["--secret-file", "/run/secrets/local_flag", "--listen-host", "0.0.0.0", "--listen-port", "6402", "--max-sessions", "2", "--board-runtime", "/opt/hitcon/artifacts/board_runtime"]
